@@ -1,67 +1,462 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Users,
+  FlaskConical,
+  DoorOpen,
+  ClipboardList,
+  LayoutDashboard,
+  RefreshCw,
+  Plus,
+  Search,
+  Menu,
+  X,
+} from "lucide-react";
+
+const API = "http://localhost:3000";
+
+const secoes = [
+  { id: "inicio", nome: "Visão geral", Icone: LayoutDashboard },
+  { id: "usuarios", nome: "Usuários", Icone: Users },
+  { id: "laboratorios", nome: "Laboratórios", Icone: FlaskConical },
+  { id: "salas", nome: "Salas", Icone: DoorOpen },
+  { id: "status", nome: "Status", Icone: ClipboardList },
+];
+
+const campos = {
+  usuarios: [
+    { nome: "cpf", rotulo: "CPF", tipo: "text" },
+    { nome: "nome", rotulo: "Nome completo", tipo: "text" },
+    { nome: "data_nascimento", rotulo: "Data de nascimento", tipo: "date" },
+    { nome: "celular", rotulo: "Celular", tipo: "text" },
+    { nome: "email", rotulo: "E-mail", tipo: "email" },
+    { nome: "login", rotulo: "Login", tipo: "text" },
+    { nome: "senha", rotulo: "Senha", tipo: "password" },
+  ],
+  laboratorios: [
+    { nome: "codigo", rotulo: "Código", tipo: "text" },
+    { nome: "nome", rotulo: "Nome do laboratório", tipo: "text" },
+    { nome: "capacidade", rotulo: "Capacidade", tipo: "number" },
+    { nome: "localizacao", rotulo: "Localização", tipo: "text" },
+  ],
+  salas: [
+    { nome: "codigo", rotulo: "Código", tipo: "text" },
+    { nome: "nome", rotulo: "Nome da sala", tipo: "text" },
+    { nome: "capacidade", rotulo: "Capacidade", tipo: "number" },
+    { nome: "localizacao", rotulo: "Localização", tipo: "text" },
+  ],
+};
+
+const endpoints = {
+  usuarios: "/usuarios",
+  laboratorios: "/laboratorios",
+  salas: "/salas",
+  status: "/status",
+};
+
+const nomes = {
+  usuarios: "Usuários",
+  laboratorios: "Laboratórios",
+  salas: "Salas",
+  status: "Status",
+};
 
 export default function Home() {
+  const [secao, setSecao] = useState("inicio");
+  const [dados, setDados] = useState({
+    usuarios: [],
+    laboratorios: [],
+    salas: [],
+    status: [],
+  });
+  const [formulario, setFormulario] = useState({});
+  const [busca, setBusca] = useState("");
+  const [mensagem, setMensagem] = useState("");
+  const [carregando, setCarregando] = useState(false);
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  async function carregarDados(tipo) {
+    if (!endpoints[tipo]) return;
+
+    setCarregando(true);
+    setMensagem("");
+
+    try {
+      const resposta = await fetch(API + endpoints[tipo], {
+        credentials: "include",
+      });
+
+      const resultado = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(resultado.mensagem || "Erro ao carregar os dados.");
+      }
+
+      setDados((anterior) => ({
+        ...anterior,
+        [tipo]: resultado,
+      }));
+    } catch (erro) {
+      setMensagem(
+        "Não foi possível carregar os dados. Confira se a API está ligada."
+      );
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  useEffect(() => {
+    if (endpoints[secao]) {
+      carregarDados(secao);
+    }
+  }, [secao]);
+
+  async function cadastrar(evento) {
+    evento.preventDefault();
+    setMensagem("");
+
+    try {
+      const tokenResposta = await fetch(API + "/csrf-token", {
+        credentials: "include",
+      });
+
+      if (!tokenResposta.ok) {
+        throw new Error("Não foi possível obter o token de segurança.");
+      }
+
+      const token = await tokenResposta.json();
+
+      const resposta = await fetch(API + endpoints[secao], {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": token.csrfToken,
+        },
+        body: JSON.stringify(formulario),
+      });
+
+      const resultado = await resposta.text();
+
+      if (!resposta.ok) {
+        throw new Error(resultado || "Erro ao cadastrar.");
+      }
+
+      setMensagem("Cadastro realizado com sucesso!");
+      setFormulario({});
+      evento.target.reset();
+      await carregarDados(secao);
+    } catch (erro) {
+      setMensagem(erro.message || "Erro ao cadastrar.");
+    }
+  }
+
+  function selecionar(id) {
+    setSecao(id);
+    setBusca("");
+    setMensagem("");
+    setFormulario({});
+    setMenuAberto(false);
+  }
+
+  const lista = dados[secao] || [];
+
+  const filtrados = lista.filter((item) =>
+    Object.values(item).some((valor) =>
+      String(valor ?? "").toLowerCase().includes(busca.toLowerCase())
+    )
+  );
+
+  function nomeColuna(coluna) {
+    const traducoes = {
+      id_usuario: "ID",
+      id_laboratorio: "ID",
+      id_sala: "ID",
+      id_status: "ID",
+      data_nascimento: "Nascimento",
+      localizacao: "Localização",
+    };
+
+    return (
+      traducoes[coluna] ||
+      coluna.replaceAll("_", " ").replace(/^./, (letra) => letra.toUpperCase())
+    );
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <aside
+        className={`fixed inset-y-0 left-0 z-30 w-64 border-r border-gray-200 bg-white p-5 transition-transform md:translate-x-0 ${
+          menuAberto ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="mb-10 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-black p-3 text-white">
+              <DoorOpen size={23} />
+            </div>
+            <div>
+              <h1 className="font-bold">Reserva de Salas</h1>
+              <p className="text-xs text-gray-500">Painel administrativo</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setMenuAberto(false)}
+            className="md:hidden"
+            aria-label="Fechar menu"
+          >
+            <X size={20} />
+          </button>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
+          Menu principal
+        </p>
+
+        <nav className="space-y-2">
+          {secoes.map(({ id, nome, Icone }) => (
+            <button
+              key={id}
+              onClick={() => selecionar(id)}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm ${
+                secao === id
+                  ? "bg-gray-100 font-semibold text-black"
+                  : "text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <Icone size={19} />
+              {nome}
+            </button>
+          ))}
+        </nav>
+
+        <div className="absolute bottom-5 left-5 right-5 rounded-xl bg-gray-50 p-4">
+          <p className="text-sm font-medium">Sistema de reservas</p>
+          <p className="mt-1 text-xs text-gray-500">Projeto acadêmico</p>
+        </div>
+      </aside>
+
+      {menuAberto && (
+        <button
+          aria-label="Fechar menu"
+          onClick={() => setMenuAberto(false)}
+          className="fixed inset-0 z-20 bg-black/30 md:hidden"
+        />
+      )}
+
+      <main className="min-h-screen md:ml-64">
+        <header className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 md:px-8">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMenuAberto(true)}
+              className="rounded-lg p-2 hover:bg-gray-100 md:hidden"
+              aria-label="Abrir menu"
+            >
+              <Menu size={22} />
+            </button>
+
+            <div>
+              <p className="text-sm text-gray-500">Sistema de gerenciamento</p>
+              <h2 className="text-xl font-bold">
+                {secoes.find((item) => item.id === secao)?.nome}
+              </h2>
+            </div>
+          </div>
+
+          {endpoints[secao] && (
+            <button
+              onClick={() => carregarDados(secao)}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              <RefreshCw size={16} />
+              Atualizar
+            </button>
+          )}
+        </header>
+
+        <div className="space-y-6 p-5 md:p-8">
+          {secao === "inicio" ? (
+            <>
+              <div>
+                <h3 className="text-2xl font-bold">Bem-vindo!</h3>
+                <p className="mt-1 text-gray-500">
+                  Gerencie os cadastros e consulte as informações do sistema.
+                </p>
+              </div>
+
+              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  { id: "usuarios", Icone: Users },
+                  { id: "laboratorios", Icone: FlaskConical },
+                  { id: "salas", Icone: DoorOpen },
+                  { id: "status", Icone: ClipboardList },
+                ].map(({ id, Icone }) => (
+                  <button
+                    key={id}
+                    onClick={() => selecionar(id)}
+                    className="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                  >
+                    <div className="mb-5 inline-flex rounded-xl bg-gray-100 p-3">
+                      <Icone size={22} />
+                    </div>
+                    <p className="text-sm text-gray-500">{nomes[id]}</p>
+                    <p className="mt-1 text-3xl font-bold">
+                      {dados[id].length}
+                    </p>
+                    <p className="mt-3 text-xs text-gray-500">
+                      Ver informações →
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              <section className="rounded-2xl border border-gray-200 bg-white p-6">
+                <h3 className="font-bold">Acesso rápido</h3>
+                <p className="mt-2 text-sm text-gray-500">
+                  Escolha uma opção no menu lateral para cadastrar ou consultar
+                  os dados.
+                </p>
+              </section>
+            </>
+          ) : (
+            <>
+              {campos[secao] && (
+                <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <div className="mb-6 flex items-center gap-3">
+                    <div className="rounded-xl bg-gray-100 p-3">
+                      <Plus size={21} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold">
+                        Cadastrar{" "}
+                        {secao === "usuarios"
+                          ? "usuário"
+                          : secao === "salas"
+                            ? "sala"
+                            : "laboratório"}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        Preencha os campos abaixo.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={cadastrar}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      {campos[secao].map((campo) => (
+                        <label
+                          key={campo.nome}
+                          className="block text-sm font-medium"
+                        >
+                          {campo.rotulo}
+                          <input
+                            required
+                            type={campo.tipo}
+                            min={campo.tipo === "number" ? "1" : undefined}
+                            value={formulario[campo.nome] || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                [campo.nome]: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+                      ))}
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="mt-6 flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                    >
+                      <Plus size={17} />
+                      Cadastrar
+                    </button>
+                  </form>
+                </section>
+              )}
+
+              <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="font-bold">
+                      Lista de {nomes[secao].toLowerCase()}
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {lista.length} registro(s) encontrado(s)
+                    </p>
+                  </div>
+
+                  <div className="relative">
+                    <Search
+                      size={17}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                    <input
+                      value={busca}
+                      onChange={(evento) => setBusca(evento.target.value)}
+                      placeholder="Pesquisar..."
+                      className="w-full rounded-xl border border-gray-200 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-black sm:w-64"
+                    />
+                  </div>
+                </div>
+
+                {mensagem && (
+                  <p className="border-b border-gray-100 px-5 py-3 text-sm">
+                    {mensagem}
+                  </p>
+                )}
+
+                {carregando ? (
+                  <p className="p-8 text-center text-sm text-gray-500">
+                    Carregando...
+                  </p>
+                ) : filtrados.length === 0 ? (
+                  <p className="p-8 text-center text-sm text-gray-500">
+                    Nenhum registro encontrado.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                        <tr>
+                          {Object.keys(filtrados[0]).map((coluna) => (
+                            <th
+                              key={coluna}
+                              className="whitespace-nowrap px-5 py-4 font-semibold"
+                            >
+                              {nomeColuna(coluna)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {filtrados.map((item, indice) => (
+                          <tr key={indice} className="hover:bg-gray-50">
+                            {Object.entries(item).map(([coluna, valor]) => (
+                              <td
+                                key={coluna}
+                                className="whitespace-nowrap px-5 py-4"
+                              >
+                                {valor == null ? "—" : String(valor)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+
+          {mensagem && secao === "inicio" && (
+            <p className="text-sm text-gray-600">{mensagem}</p>
+          )}
         </div>
       </main>
     </div>

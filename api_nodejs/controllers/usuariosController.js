@@ -7,9 +7,7 @@ function texto(valor, maximo) {
 
   const resultado = valor.trim();
 
-  if (!resultado || resultado.length > maximo) {
-    return null;
-  }
+  if (!resultado || resultado.length > maximo) return null;
 
   return resultado;
 }
@@ -29,9 +27,9 @@ export async function cadastrarUsuario(req, res) {
       !email || !login || typeof senha !== 'string' ||
       senha.length < 8 || senha.length > 72
     ) {
-      return res.status(400).send(
-        'Dados inválidos. Confira os campos e a senha.'
-      );
+      return res.status(400).json({
+        mensagem: 'Confira os campos e use uma senha de 8 a 72 caracteres.'
+      });
     }
 
     if (
@@ -39,9 +37,9 @@ export async function cadastrarUsuario(req, res) {
       Number.isNaN(Date.parse(dataNascimento)) ||
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     ) {
-      return res.status(400).send(
-        'Data de nascimento ou e-mail inválido.'
-      );
+      return res.status(400).json({
+        mensagem: 'Data de nascimento ou e-mail inválido.'
+      });
     }
 
     const senhaHash = await bcrypt.hash(senha, 12);
@@ -63,16 +61,15 @@ export async function cadastrarUsuario(req, res) {
       (@cpf, @nome, @data_nascimento, @celular, @email, @login, @senha, GETDATE())
     `);
 
-    res.send(`
-      <h1>Usuário cadastrado com sucesso!</h1>
-      <p><a href="/cadastro">Cadastrar outro usuário</a></p>
-      <p><a href="/">Voltar ao início</a></p>
-    `);
+    return res.status(201).json({
+      mensagem: 'Usuário cadastrado com sucesso!'
+    });
   } catch (erro) {
     console.error('Erro ao cadastrar usuário:', erro.message);
-    res.status(500).send(
-      'Não foi possível cadastrar o usuário. Confira os dados e tente novamente.'
-    );
+
+    return res.status(500).json({
+      mensagem: 'Não foi possível cadastrar. Verifique se CPF e login já existem e confira os dados.'
+    });
   }
 }
 
@@ -86,10 +83,11 @@ export async function listarUsuarios(req, res) {
       ORDER BY nome
     `);
 
-    res.json(resultado.recordset);
+    return res.json(resultado.recordset);
   } catch (erro) {
     console.error('Erro ao consultar usuários:', erro.message);
-    res.status(500).json({
+
+    return res.status(500).json({
       mensagem: 'Erro ao consultar usuários.'
     });
   }
