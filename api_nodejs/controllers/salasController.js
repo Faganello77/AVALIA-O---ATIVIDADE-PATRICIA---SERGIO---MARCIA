@@ -83,4 +83,47 @@ export async function listarSalas(req, res) {
     });
   }
 }
+export async function excluirSala(req, res) {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({
+        mensagem: 'ID da sala inválido.'
+      });
+    }
+
+    const banco = await conectarBanco();
+    const request = banco.request();
+
+    request.input('id', sql.Int, id);
+
+    const resultado = await request.query(`
+      DELETE FROM reserva.SALA
+      WHERE id_sala = @id
+    `);
+
+    if (resultado.rowsAffected[0] === 0) {
+      return res.status(404).json({
+        mensagem: 'Sala não encontrada.'
+      });
+    }
+
+    return res.json({
+      mensagem: 'Sala excluída com sucesso!'
+    });
+  } catch (erro) {
+    console.error('Erro ao excluir sala:', erro.message);
+
+    if (erro.number === 547) {
+      return res.status(409).json({
+        mensagem: 'Não é possível excluir esta sala porque ela está vinculada a outros registros.'
+      });
+    }
+
+    return res.status(500).json({
+      mensagem: 'Não foi possível excluir a sala.'
+    });
+  }
+}
 

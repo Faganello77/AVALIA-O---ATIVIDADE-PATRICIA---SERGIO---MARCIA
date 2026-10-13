@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -137,18 +138,82 @@ export default function Home() {
         body: JSON.stringify(formulario),
       });
 
-      const resultado = await resposta.text();
+      const resultadoTexto = await resposta.text();
+      let resultado;
 
-      if (!resposta.ok) {
-        throw new Error(resultado || "Erro ao cadastrar.");
+      try {
+        resultado = JSON.parse(resultadoTexto);
+      } catch {
+        resultado = { mensagem: resultadoTexto };
       }
 
-      setMensagem("Cadastro realizado com sucesso!");
+      if (!resposta.ok) {
+        throw new Error(
+          resultado.mensagem || "Erro ao cadastrar. Confira os dados."
+        );
+      }
+
+      setMensagem(resultado.mensagem || "Cadastro realizado com sucesso!");
       setFormulario({});
       evento.target.reset();
       await carregarDados(secao);
     } catch (erro) {
       setMensagem(erro.message || "Erro ao cadastrar.");
+    }
+  }
+
+  async function excluir(tipo, id) {
+    if (!id) {
+      setMensagem("Não foi possível identificar o registro para excluir.");
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `Tem certeza que deseja excluir este registro de ${nomes[tipo].toLowerCase()}?`
+    );
+
+    if (!confirmado) return;
+
+    setMensagem("");
+
+    try {
+      const tokenResposta = await fetch(API + "/csrf-token", {
+        credentials: "include",
+      });
+
+      if (!tokenResposta.ok) {
+        throw new Error("Não foi possível obter o token de segurança.");
+      }
+
+      const token = await tokenResposta.json();
+
+      const resposta = await fetch(`${API}${endpoints[tipo]}/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          "x-csrf-token": token.csrfToken,
+        },
+      });
+
+      const resultadoTexto = await resposta.text();
+      let resultado;
+
+      try {
+        resultado = JSON.parse(resultadoTexto);
+      } catch {
+        resultado = { mensagem: resultadoTexto };
+      }
+
+      if (!resposta.ok) {
+        throw new Error(
+          resultado.mensagem || "Não foi possível excluir o registro."
+        );
+      }
+
+      await carregarDados(tipo);
+      setMensagem(resultado.mensagem || "Registro excluído com sucesso!");
+    } catch (erro) {
+      setMensagem(erro.message || "Erro ao excluir o registro.");
     }
   }
 
@@ -182,6 +247,13 @@ export default function Home() {
       traducoes[coluna] ||
       coluna.replaceAll("_", " ").replace(/^./, (letra) => letra.toUpperCase())
     );
+  }
+
+  function obterId(item, tipo) {
+    if (tipo === "usuarios") return item.id_usuario;
+    if (tipo === "salas") return item.id_sala;
+    if (tipo === "laboratorios") return item.id_laboratorio;
+    return null;
   }
 
   return (
@@ -431,21 +503,53 @@ export default function Home() {
                               {nomeColuna(coluna)}
                             </th>
                           ))}
+
+                          {["usuarios", "salas", "laboratorios"].includes(
+                            secao
+                          ) && (
+                            <th className="whitespace-nowrap px-5 py-4 font-semibold">
+                              Ações
+                            </th>
+                          )}
                         </tr>
                       </thead>
+
                       <tbody className="divide-y divide-gray-100">
-                        {filtrados.map((item, indice) => (
-                          <tr key={indice} className="hover:bg-gray-50">
-                            {Object.entries(item).map(([coluna, valor]) => (
-                              <td
-                                key={coluna}
-                                className="whitespace-nowrap px-5 py-4"
-                              >
-                                {valor == null ? "—" : String(valor)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
+                        {filtrados.map((item, indice) => {
+                          const id = obterId(item, secao);
+
+                          return (
+                            <tr
+                              key={id ?? indice}
+                              className="hover:bg-gray-50"
+                            >
+                              {Object.entries(item).map(([coluna, valor]) => (
+                                <td
+                                  key={coluna}
+                                  className="whitespace-nowrap px-5 py-4"
+                                >
+                                  {valor == null ? "—" : String(valor)}
+                                </td>
+                              ))}
+
+                              {[
+                                "usuarios",
+                                "salas",
+                                "laboratorios",
+                              ].includes(secao) && (
+                                <td className="whitespace-nowrap px-5 py-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => excluir(secao, id)}
+                                    className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                                  >
+                                    Excluir
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

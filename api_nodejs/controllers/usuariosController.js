@@ -92,3 +92,47 @@ export async function listarUsuarios(req, res) {
     });
   }
 }
+export async function excluirUsuario(req, res) {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({
+        mensagem: 'ID do usuário inválido.'
+      });
+    }
+
+    const banco = await conectarBanco();
+    const request = banco.request();
+
+    request.input('id', sql.Int, id);
+
+    const resultado = await request.query(`
+      DELETE FROM reserva.USUARIO
+      WHERE id_usuario = @id
+    `);
+
+    if (resultado.rowsAffected[0] === 0) {
+      return res.status(404).json({
+        mensagem: 'Usuário não encontrado.'
+      });
+    }
+
+    return res.json({
+      mensagem: 'Usuário excluído com sucesso!'
+    });
+  } catch (erro) {
+    console.error('Erro ao excluir usuário:', erro.message);
+
+    if (erro.number === 547) {
+      return res.status(409).json({
+        mensagem: 'Não é possível excluir este usuário porque ele está vinculado a uma reserva.'
+      });
+    }
+
+    return res.status(500).json({
+      mensagem: 'Não foi possível excluir o usuário.'
+    });
+  }
+}
+

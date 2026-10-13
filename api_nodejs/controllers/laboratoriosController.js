@@ -83,3 +83,48 @@ export async function listarLaboratorios(req, res) {
     });
   }
 }
+
+export async function excluirLaboratorio(req, res) {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({
+        mensagem: 'ID do laboratório inválido.'
+      });
+    }
+
+    const banco = await conectarBanco();
+    const request = banco.request();
+
+    request.input('id', sql.Int, id);
+
+    const resultado = await request.query(`
+      DELETE FROM reserva.LABORATORIO
+      WHERE id_laboratorio = @id
+    `);
+
+    if (resultado.rowsAffected[0] === 0) {
+      return res.status(404).json({
+        mensagem: 'Laboratório não encontrado.'
+      });
+    }
+
+    return res.json({
+      mensagem: 'Laboratório excluído com sucesso!'
+    });
+  } catch (erro) {
+    console.error('Erro ao excluir laboratório:', erro.message);
+
+    if (erro.number === 547) {
+      return res.status(409).json({
+        mensagem: 'Não é possível excluir este laboratório porque ele está vinculado a outros registros.'
+      });
+    }
+
+    return res.status(500).json({
+      mensagem: 'Não foi possível excluir o laboratório.'
+    });
+  }
+}
+
