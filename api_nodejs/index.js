@@ -15,6 +15,7 @@ import usuariosRouter from './routes/usuarios.js';
 import laboratoriosRouter from './routes/laboratorios.js';
 import salasRouter from './routes/salas.js';
 import statusRouter from './routes/status.js';
+import reservasRouter from './routes/reservas.js';
 
 const app = express();
 const porta = Number(process.env.PORTA || 3000);
@@ -74,6 +75,7 @@ app.use('/usuarios', usuariosRouter);
 app.use('/laboratorios', laboratoriosRouter);
 app.use('/salas', salasRouter);
 app.use('/status', statusRouter);
+app.use('/reservas', reservasRouter);
 
 app.use((req, res) => {
   res.status(404).json({ mensagem: 'Rota não encontrada.' });

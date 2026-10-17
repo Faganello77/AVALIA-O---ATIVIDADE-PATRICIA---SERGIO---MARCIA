@@ -114,6 +114,16 @@ export default function Home() {
     }
   }
 
+  // Carrega todos os dados assim que a página abre.
+  useEffect(() => {
+    const tipos = ["usuarios", "laboratorios", "salas", "status", "reservas"];
+
+    tipos.forEach((tipo) => {
+      carregarDados(tipo);
+    });
+  }, []);
+
+  // Quando entrar em outra aba, atualiza os dados daquela seção.
   useEffect(() => {
     if (endpoints[secao]) {
       carregarDados(secao);
@@ -550,7 +560,9 @@ export default function Home() {
                               key={status.id_status}
                               value={status.id_status}
                             >
-                              {status.nome || status.descricao || `Status ${status.id_status}`}
+                              {status.nome ||
+                                status.descricao ||
+                                `Status ${status.id_status}`}
                             </option>
                           ))}
                         </select>
