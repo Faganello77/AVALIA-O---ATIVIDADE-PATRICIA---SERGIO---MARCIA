@@ -1,5 +1,62 @@
 import { conectarBanco, sql } from "../config/db.js";
 
+// Verifica se a data realmente existe no calendário
+function dataValida(valor) {
+  if (
+    typeof valor !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(valor)
+  ) {
+    return false;
+  }
+
+  const [ano, mes, dia] = valor.split("-").map(Number);
+
+  if (ano < 1 || mes < 1 || mes > 12) {
+    return false;
+  }
+
+  const bissexto =
+    ano % 4 === 0 &&
+    (ano % 100 !== 0 || ano % 400 === 0);
+
+  const diasPorMes = [
+    31,
+    bissexto ? 29 : 28,
+    31, 30, 31, 30,
+    31, 31, 30, 31, 30, 31,
+  ];
+
+  return dia >= 1 && dia <= diasPorMes[mes - 1];
+}
+
+// Verifica se o horário está no formato HH:mm
+function horaValida(valor) {
+  if (
+    typeof valor !== "string" ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(valor)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+// Aceita somente IDs inteiros positivos e seguros
+function idValido(valor) {
+  if (typeof valor === "number") {
+    return Number.isSafeInteger(valor) && valor > 0;
+  }
+
+  if (
+    typeof valor !== "string" ||
+    !/^[1-9]\d*$/.test(valor.trim())
+  ) {
+    return false;
+  }
+
+  return Number.isSafeInteger(Number(valor));
+}
+
 // Consultar reservas com filtros
 export async function listarReservas(req, res) {
   try {
@@ -12,18 +69,125 @@ export async function listarReservas(req, res) {
       id_status,
     } = req.query;
 
+    // Valida os filtros recebidos pela API
+    for (const [valor, limite] of [
+      [recurso, 100],
+      [usuario, 100],
+    ]) {
+      if (
+        valor !== undefined &&
+        (
+          typeof valor !== "string" ||
+          valor.trim().length > limite
+        )
+      ) {
+        return res.status(400).json({
+          mensagem: "Um dos filtros de texto é inválido.",
+        });
+      }
+    }
+
+    const dataInicioFiltro =
+      data_inicio === undefined || data_inicio === ""
+        ? null
+        : data_inicio;
+
+    const dataFimFiltro =
+      data_fim === undefined || data_fim === ""
+        ? null
+        : data_fim;
+
+    const horaFiltro =
+      hora === undefined || hora === ""
+        ? null
+        : hora;
+
+    const statusFiltro =
+      id_status === undefined || id_status === ""
+        ? null
+        : id_status;
+
+    if (
+      dataInicioFiltro !== null &&
+      !dataValida(dataInicioFiltro)
+    ) {
+      return res.status(400).json({
+        mensagem: "A data inicial do filtro é inválida.",
+      });
+    }
+
+    if (
+      dataFimFiltro !== null &&
+      !dataValida(dataFimFiltro)
+    ) {
+      return res.status(400).json({
+        mensagem: "A data final do filtro é inválida.",
+      });
+    }
+
+    if (
+      dataInicioFiltro &&
+      dataFimFiltro &&
+      dataInicioFiltro > dataFimFiltro
+    ) {
+      return res.status(400).json({
+        mensagem: "A data inicial não pode ser posterior à final.",
+      });
+    }
+
+    if (horaFiltro !== null && !horaValida(horaFiltro)) {
+      return res.status(400).json({
+        mensagem: "O horário do filtro é inválido.",
+      });
+    }
+
+    if (statusFiltro !== null && !idValido(statusFiltro)) {
+      return res.status(400).json({
+        mensagem: "O status informado é inválido.",
+      });
+    }
+
     const pool = await conectarBanco();
     const pedido = pool.request();
 
-    pedido.input("recurso", sql.VarChar(100), recurso?.trim() || null);
-    pedido.input("usuario", sql.VarChar(100), usuario?.trim() || null);
-    pedido.input("data_inicio", sql.VarChar(10), data_inicio || null);
-    pedido.input("data_fim", sql.VarChar(10), data_fim || null);
-    pedido.input("hora", sql.VarChar(8), hora || null);
+    pedido.input(
+      "recurso",
+      sql.VarChar(100),
+      typeof recurso === "string" && recurso.trim()
+        ? recurso.trim()
+        : null
+    );
+
+    pedido.input(
+      "usuario",
+      sql.VarChar(100),
+      typeof usuario === "string" && usuario.trim()
+        ? usuario.trim()
+        : null
+    );
+
+    pedido.input(
+      "data_inicio",
+      sql.VarChar(10),
+      dataInicioFiltro
+    );
+
+    pedido.input(
+      "data_fim",
+      sql.VarChar(10),
+      dataFimFiltro
+    );
+
+    pedido.input(
+      "hora",
+      sql.VarChar(8),
+      horaFiltro
+    );
+
     pedido.input(
       "id_status",
       sql.Int,
-      id_status ? Number(id_status) : null
+      statusFiltro === null ? null : Number(statusFiltro)
     );
 
     const resultado = await pedido.query(`
@@ -104,11 +268,11 @@ export async function listarReservas(req, res) {
       ORDER BY r.data_inicio DESC, r.hora_inicio DESC
     `);
 
-    res.json(resultado.recordset);
+    return res.json(resultado.recordset);
   } catch (erro) {
-    console.error("Erro ao listar reservas:", erro);
+    console.error("Erro ao listar reservas:", erro.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       mensagem: "Erro ao listar reservas.",
     });
   }
@@ -128,47 +292,71 @@ export async function cadastrarReserva(req, res) {
       id_sala,
     } = req.body;
 
-    if (
-      !data_inicio ||
-      !data_fim ||
-      !hora_inicio ||
-      !hora_fim ||
-      !id_usuario ||
-      !id_status ||
-      (!id_laboratorio && !id_sala)
-    ) {
-      return res.status(400).json({
-        erro: "Preencha todos os campos obrigatórios.",
-      });
-    }
+    const temLaboratorio =
+      id_laboratorio !== undefined &&
+      id_laboratorio !== null &&
+      id_laboratorio !== "";
+
+    const temSala =
+      id_sala !== undefined &&
+      id_sala !== null &&
+      id_sala !== "";
 
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(data_inicio) ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(data_fim) ||
-      !/^\d{2}:\d{2}$/.test(hora_inicio) ||
-      !/^\d{2}:\d{2}$/.test(hora_fim)
+      !dataValida(data_inicio) ||
+      !dataValida(data_fim) ||
+      !horaValida(hora_inicio) ||
+      !horaValida(hora_fim) ||
+      !idValido(id_usuario) ||
+      !idValido(id_status)
     ) {
       return res.status(400).json({
-        erro: "Verifique as datas e os horários informados.",
+        mensagem: "Verifique os campos, as datas, os horários e os IDs.",
       });
     }
 
     if (data_fim < data_inicio) {
       return res.status(400).json({
-        erro: "A data final não pode ser anterior à inicial.",
+        mensagem: "A data final não pode ser anterior à inicial.",
       });
     }
 
-    if (id_laboratorio && id_sala) {
+    if (
+      data_inicio === data_fim &&
+      hora_fim <= hora_inicio
+    ) {
       return res.status(400).json({
-        erro: "Selecione somente um recurso: laboratório ou sala.",
+        mensagem: "O horário final deve ser posterior ao inicial.",
+      });
+    }
+
+    if (temLaboratorio === temSala) {
+      return res.status(400).json({
+        mensagem: "Selecione somente um recurso: laboratório ou sala.",
+      });
+    }
+
+    if (
+      temLaboratorio &&
+      !idValido(id_laboratorio)
+    ) {
+      return res.status(400).json({
+        mensagem: "O ID do laboratório é inválido.",
+      });
+    }
+
+    if (
+      temSala &&
+      !idValido(id_sala)
+    ) {
+      return res.status(400).json({
+        mensagem: "O ID da sala é inválido.",
       });
     }
 
     const pool = await conectarBanco();
     const pedido = pool.request();
 
-    // Recebe os valores como texto e converte no SQL Server.
     pedido.input("data_inicio", sql.VarChar(10), data_inicio);
     pedido.input("data_fim", sql.VarChar(10), data_fim);
     pedido.input("hora_inicio", sql.VarChar(8), hora_inicio);
@@ -180,13 +368,13 @@ export async function cadastrarReserva(req, res) {
     pedido.input(
       "id_laboratorio",
       sql.Int,
-      id_laboratorio ? Number(id_laboratorio) : null
+      temLaboratorio ? Number(id_laboratorio) : null
     );
 
     pedido.input(
       "id_sala",
       sql.Int,
-      id_sala ? Number(id_sala) : null
+      temSala ? Number(id_sala) : null
     );
 
     const resultado = await pedido.query(`
@@ -213,12 +401,12 @@ export async function cadastrarReserva(req, res) {
       )
     `);
 
-    res.status(201).json(resultado.recordset[0]);
+    return res.status(201).json(resultado.recordset[0]);
   } catch (erro) {
-    console.error("Erro ao cadastrar reserva:", erro);
+    console.error("Erro ao cadastrar reserva:", erro.message);
 
-    res.status(500).json({
-      erro: "Erro ao cadastrar reserva.",
+    return res.status(500).json({
+      mensagem: "Erro ao cadastrar reserva.",
     });
   }
 }
@@ -226,11 +414,11 @@ export async function cadastrarReserva(req, res) {
 // Excluir reserva
 export async function excluirReserva(req, res) {
   try {
-    const id = Number(req.params.id);
+    const { id } = req.params;
 
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!idValido(id)) {
       return res.status(400).json({
-        erro: "ID inválido.",
+        mensagem: "ID inválido.",
       });
     }
 
@@ -238,7 +426,7 @@ export async function excluirReserva(req, res) {
 
     const resultado = await pool
       .request()
-      .input("id", sql.Int, id)
+      .input("id", sql.Int, Number(id))
       .query(`
         DELETE FROM reserva.RESERVA
         WHERE id_reserva = @id
@@ -246,18 +434,18 @@ export async function excluirReserva(req, res) {
 
     if (resultado.rowsAffected[0] === 0) {
       return res.status(404).json({
-        erro: "Reserva não encontrada.",
+        mensagem: "Reserva não encontrada.",
       });
     }
 
-    res.json({
+    return res.json({
       mensagem: "Reserva excluída com sucesso.",
     });
   } catch (erro) {
-    console.error("Erro ao excluir reserva:", erro);
+    console.error("Erro ao excluir reserva:", erro.message);
 
-    res.status(500).json({
-      erro: "Erro ao excluir reserva.",
+    return res.status(500).json({
+      mensagem: "Erro ao excluir reserva.",
     });
   }
 }
