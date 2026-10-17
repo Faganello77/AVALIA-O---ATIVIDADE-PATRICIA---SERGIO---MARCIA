@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -13,6 +12,7 @@ import {
   Search,
   Menu,
   X,
+  CalendarDays,
 } from "lucide-react";
 
 const API = "http://localhost:3000";
@@ -23,6 +23,7 @@ const secoes = [
   { id: "laboratorios", nome: "Laboratórios", Icone: FlaskConical },
   { id: "salas", nome: "Salas", Icone: DoorOpen },
   { id: "status", nome: "Status", Icone: ClipboardList },
+  { id: "reservas", nome: "Reservas", Icone: CalendarDays },
 ];
 
 const campos = {
@@ -54,6 +55,7 @@ const endpoints = {
   laboratorios: "/laboratorios",
   salas: "/salas",
   status: "/status",
+  reservas: "/reservas",
 };
 
 const nomes = {
@@ -61,21 +63,26 @@ const nomes = {
   laboratorios: "Laboratórios",
   salas: "Salas",
   status: "Status",
+  reservas: "Reservas",
 };
 
 export default function Home() {
   const [secao, setSecao] = useState("inicio");
+
   const [dados, setDados] = useState({
     usuarios: [],
     laboratorios: [],
     salas: [],
     status: [],
+    reservas: [],
   });
+
   const [formulario, setFormulario] = useState({});
   const [busca, setBusca] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
+  const [tipoRecurso, setTipoRecurso] = useState("laboratorio");
 
   async function carregarDados(tipo) {
     if (!endpoints[tipo]) return;
@@ -156,6 +163,7 @@ export default function Home() {
       setMensagem(resultado.mensagem || "Cadastro realizado com sucesso!");
       setFormulario({});
       evento.target.reset();
+
       await carregarDados(secao);
     } catch (erro) {
       setMensagem(erro.message || "Erro ao cadastrar.");
@@ -169,7 +177,9 @@ export default function Home() {
     }
 
     const confirmado = window.confirm(
-      `Tem certeza que deseja excluir este registro de ${nomes[tipo].toLowerCase()}?`
+      `Tem certeza que deseja excluir este registro de ${nomes[
+        tipo
+      ].toLowerCase()}?`
     );
 
     if (!confirmado) return;
@@ -222,6 +232,7 @@ export default function Home() {
     setBusca("");
     setMensagem("");
     setFormulario({});
+    setTipoRecurso("laboratorio");
     setMenuAberto(false);
   }
 
@@ -235,12 +246,20 @@ export default function Home() {
 
   function nomeColuna(coluna) {
     const traducoes = {
-      id_usuario: "ID",
-      id_laboratorio: "ID",
-      id_sala: "ID",
-      id_status: "ID",
+      id_reserva: "ID da reserva",
+      id_usuario: "ID do usuário",
+      id_laboratorio: "ID do laboratório",
+      id_sala: "ID da sala",
+      id_status: "ID do status",
+      data_inicio: "Data de início",
+      data_fim: "Data de término",
+      hora_inicio: "Hora de início",
+      hora_fim: "Hora de término",
       data_nascimento: "Nascimento",
       localizacao: "Localização",
+      nome_usuario: "Usuário",
+      nome_laboratorio: "Laboratório",
+      nome_sala: "Sala",
     };
 
     return (
@@ -253,6 +272,8 @@ export default function Home() {
     if (tipo === "usuarios") return item.id_usuario;
     if (tipo === "salas") return item.id_sala;
     if (tipo === "laboratorios") return item.id_laboratorio;
+    if (tipo === "reservas") return item.id_reserva;
+
     return null;
   }
 
@@ -268,6 +289,7 @@ export default function Home() {
             <div className="rounded-xl bg-black p-3 text-white">
               <DoorOpen size={23} />
             </div>
+
             <div>
               <h1 className="font-bold">Reserva de Salas</h1>
               <p className="text-xs text-gray-500">Painel administrativo</p>
@@ -330,7 +352,10 @@ export default function Home() {
             </button>
 
             <div>
-              <p className="text-sm text-gray-500">Sistema de gerenciamento</p>
+              <p className="text-sm text-gray-500">
+                Sistema de gerenciamento
+              </p>
+
               <h2 className="text-xl font-bold">
                 {secoes.find((item) => item.id === secao)?.nome}
               </h2>
@@ -353,6 +378,7 @@ export default function Home() {
             <>
               <div>
                 <h3 className="text-2xl font-bold">Bem-vindo!</h3>
+
                 <p className="mt-1 text-gray-500">
                   Gerencie os cadastros e consulte as informações do sistema.
                 </p>
@@ -364,6 +390,7 @@ export default function Home() {
                   { id: "laboratorios", Icone: FlaskConical },
                   { id: "salas", Icone: DoorOpen },
                   { id: "status", Icone: ClipboardList },
+                  { id: "reservas", Icone: CalendarDays },
                 ].map(({ id, Icone }) => (
                   <button
                     key={id}
@@ -373,10 +400,13 @@ export default function Home() {
                     <div className="mb-5 inline-flex rounded-xl bg-gray-100 p-3">
                       <Icone size={22} />
                     </div>
+
                     <p className="text-sm text-gray-500">{nomes[id]}</p>
+
                     <p className="mt-1 text-3xl font-bold">
                       {dados[id].length}
                     </p>
+
                     <p className="mt-3 text-xs text-gray-500">
                       Ver informações →
                     </p>
@@ -386,6 +416,7 @@ export default function Home() {
 
               <section className="rounded-2xl border border-gray-200 bg-white p-6">
                 <h3 className="font-bold">Acesso rápido</h3>
+
                 <p className="mt-2 text-sm text-gray-500">
                   Escolha uma opção no menu lateral para cadastrar ou consultar
                   os dados.
@@ -400,6 +431,7 @@ export default function Home() {
                     <div className="rounded-xl bg-gray-100 p-3">
                       <Plus size={21} />
                     </div>
+
                     <div>
                       <h3 className="font-bold">
                         Cadastrar{" "}
@@ -409,6 +441,7 @@ export default function Home() {
                             ? "sala"
                             : "laboratório"}
                       </h3>
+
                       <p className="text-sm text-gray-500">
                         Preencha os campos abaixo.
                       </p>
@@ -423,10 +456,13 @@ export default function Home() {
                           className="block text-sm font-medium"
                         >
                           {campo.rotulo}
+
                           <input
                             required
                             type={campo.tipo}
-                            min={campo.tipo === "number" ? "1" : undefined}
+                            min={
+                              campo.tipo === "number" ? "1" : undefined
+                            }
                             value={formulario[campo.nome] || ""}
                             onChange={(evento) =>
                               setFormulario((anterior) => ({
@@ -451,12 +487,243 @@ export default function Home() {
                 </section>
               )}
 
+              {secao === "reservas" && (
+                <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <div className="mb-6 flex items-center gap-3">
+                    <div className="rounded-xl bg-gray-100 p-3">
+                      <CalendarDays size={21} />
+                    </div>
+
+                    <div>
+                      <h3 className="font-bold">Cadastrar reserva</h3>
+                      <p className="text-sm text-gray-500">
+                        Preencha as informações da reserva.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={cadastrar}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <label className="block text-sm font-medium">
+                        Usuário
+                        <select
+                          required
+                          value={formulario.id_usuario || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              id_usuario: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        >
+                          <option value="">Selecione um usuário</option>
+
+                          {dados.usuarios.map((usuario) => (
+                            <option
+                              key={usuario.id_usuario}
+                              value={usuario.id_usuario}
+                            >
+                              {usuario.nome} (ID {usuario.id_usuario})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Status
+                        <select
+                          required
+                          value={formulario.id_status || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              id_status: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        >
+                          <option value="">Selecione um status</option>
+
+                          {dados.status.map((status) => (
+                            <option
+                              key={status.id_status}
+                              value={status.id_status}
+                            >
+                              {status.nome || status.descricao || `Status ${status.id_status}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Tipo de local
+                        <select
+                          required
+                          value={tipoRecurso}
+                          onChange={(evento) => {
+                            const novoTipo = evento.target.value;
+
+                            setTipoRecurso(novoTipo);
+
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              id_laboratorio:
+                                novoTipo === "laboratorio"
+                                  ? anterior.id_laboratorio || ""
+                                  : "",
+                              id_sala:
+                                novoTipo === "sala"
+                                  ? anterior.id_sala || ""
+                                  : "",
+                            }));
+                          }}
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        >
+                          <option value="laboratorio">Laboratório</option>
+                          <option value="sala">Sala de aula</option>
+                        </select>
+                      </label>
+
+                      {tipoRecurso === "laboratorio" ? (
+                        <label className="block text-sm font-medium">
+                          Laboratório
+                          <select
+                            required
+                            value={formulario.id_laboratorio || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_laboratorio: evento.target.value,
+                                id_sala: "",
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          >
+                            <option value="">Selecione um laboratório</option>
+
+                            {dados.laboratorios.map((lab) => (
+                              <option
+                                key={lab.id_laboratorio}
+                                value={lab.id_laboratorio}
+                              >
+                                {lab.nome} (ID {lab.id_laboratorio})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : (
+                        <label className="block text-sm font-medium">
+                          Sala de aula
+                          <select
+                            required
+                            value={formulario.id_sala || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_sala: evento.target.value,
+                                id_laboratorio: "",
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          >
+                            <option value="">Selecione uma sala</option>
+
+                            {dados.salas.map((sala) => (
+                              <option
+                                key={sala.id_sala}
+                                value={sala.id_sala}
+                              >
+                                {sala.nome} (ID {sala.id_sala})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
+                      <label className="block text-sm font-medium">
+                        Data de início
+                        <input
+                          required
+                          type="date"
+                          value={formulario.data_inicio || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              data_inicio: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Data de término
+                        <input
+                          required
+                          type="date"
+                          value={formulario.data_fim || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              data_fim: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Hora de início
+                        <input
+                          required
+                          type="time"
+                          value={formulario.hora_inicio || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              hora_inicio: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Hora de término
+                        <input
+                          required
+                          type="time"
+                          value={formulario.hora_fim || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              hora_fim: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="mt-6 flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                    >
+                      <Plus size={17} />
+                      Cadastrar reserva
+                    </button>
+                  </form>
+                </section>
+              )}
+
               <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-bold">
                       Lista de {nomes[secao].toLowerCase()}
                     </h3>
+
                     <p className="mt-1 text-sm text-gray-500">
                       {lista.length} registro(s) encontrado(s)
                     </p>
@@ -467,6 +734,7 @@ export default function Home() {
                       size={17}
                       className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                     />
+
                     <input
                       value={busca}
                       onChange={(evento) => setBusca(evento.target.value)}
@@ -504,9 +772,12 @@ export default function Home() {
                             </th>
                           ))}
 
-                          {["usuarios", "salas", "laboratorios"].includes(
-                            secao
-                          ) && (
+                          {[
+                            "usuarios",
+                            "salas",
+                            "laboratorios",
+                            "reservas",
+                          ].includes(secao) && (
                             <th className="whitespace-nowrap px-5 py-4 font-semibold">
                               Ações
                             </th>
@@ -536,6 +807,7 @@ export default function Home() {
                                 "usuarios",
                                 "salas",
                                 "laboratorios",
+                                "reservas",
                               ].includes(secao) && (
                                 <td className="whitespace-nowrap px-5 py-4">
                                   <button
