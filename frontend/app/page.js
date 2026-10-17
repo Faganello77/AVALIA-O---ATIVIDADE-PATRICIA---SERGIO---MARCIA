@@ -30,7 +30,11 @@ const campos = {
   usuarios: [
     { nome: "cpf", rotulo: "CPF", tipo: "text" },
     { nome: "nome", rotulo: "Nome completo", tipo: "text" },
-    { nome: "data_nascimento", rotulo: "Data de nascimento", tipo: "date" },
+    {
+      nome: "data_nascimento",
+      rotulo: "Data de nascimento",
+      tipo: "date",
+    },
     { nome: "celular", rotulo: "Celular", tipo: "text" },
     { nome: "email", rotulo: "E-mail", tipo: "email" },
     { nome: "login", rotulo: "Login", tipo: "text" },
@@ -82,8 +86,19 @@ export default function Home() {
   const [mensagem, setMensagem] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
+
+  // Declarado apenas uma vez
   const [tipoRecurso, setTipoRecurso] = useState("laboratorio");
 
+  // Filtros da consulta
+  const [filtroRecurso, setFiltroRecurso] = useState("");
+  const [filtroDataInicio, setFiltroDataInicio] = useState("");
+  const [filtroDataFim, setFiltroDataFim] = useState("");
+  const [filtroHora, setFiltroHora] = useState("");
+  const [filtroUsuario, setFiltroUsuario] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+
+  // Carrega os dados de uma seção
   async function carregarDados(tipo) {
     if (!endpoints[tipo]) return;
 
@@ -98,7 +113,15 @@ export default function Home() {
       const resultado = await resposta.json();
 
       if (!resposta.ok) {
-        throw new Error(resultado.mensagem || "Erro ao carregar os dados.");
+        throw new Error(
+          resultado.mensagem ||
+            resultado.erro ||
+            "Erro ao carregar os dados."
+        );
+      }
+
+      if (!Array.isArray(resultado)) {
+        throw new Error("A API não retornou uma lista.");
       }
 
       setDados((anterior) => ({
@@ -107,32 +130,161 @@ export default function Home() {
       }));
     } catch (erro) {
       setMensagem(
-        "Não foi possível carregar os dados. Confira se a API está ligada."
+        erro.message ||
+          "Não foi possível carregar os dados. Confira se a API está ligada."
       );
     } finally {
       setCarregando(false);
     }
   }
 
-  // Carrega todos os dados assim que a página abre.
+  // Carrega todas as listas quando a página abre
   useEffect(() => {
-    const tipos = ["usuarios", "laboratorios", "salas", "status", "reservas"];
+    async function carregarTudo() {
+      setCarregando(true);
 
-    tipos.forEach((tipo) => {
-      carregarDados(tipo);
-    });
+      try {
+        const tipos = [
+          "usuarios",
+          "laboratorios",
+          "salas",
+          "status",
+          "reservas",
+        ];
+
+        const resultados = await Promise.all(
+          tipos.map(async (tipo) => {
+            const resposta = await fetch(API + endpoints[tipo], {
+              credentials: "include",
+            });
+
+            const resultado = await resposta.json();
+
+            if (!resposta.ok || !Array.isArray(resultado)) {
+              throw new Error(
+                resultado.mensagem ||
+                  resultado.erro ||
+                  `Erro ao carregar ${nomes[tipo]}.`
+              );
+            }
+
+            return [tipo, resultado];
+          })
+        );
+
+        setDados((anterior) => ({
+          ...anterior,
+          ...Object.fromEntries(resultados),
+        }));
+      } catch (erro) {
+        setMensagem(
+          erro.message || "Não foi possível carregar os dados."
+        );
+      } finally {
+        setCarregando(false);
+      }
+    }
+
+    carregarTudo();
   }, []);
 
-  // Quando entrar em outra aba, atualiza os dados daquela seção.
-  useEffect(() => {
-    if (endpoints[secao]) {
-      carregarDados(secao);
-    }
-  }, [secao]);
+  // Pesquisa reservas usando os filtros
+  async function buscarReservas(evento) {
+    evento.preventDefault();
 
+    if (
+      filtroDataInicio &&
+      filtroDataFim &&
+      filtroDataFim < filtroDataInicio
+    ) {
+      setMensagem("A data final não pode ser anterior à data inicial.");
+      return;
+    }
+
+    setCarregando(true);
+    setMensagem("");
+
+    try {
+      const parametros = new URLSearchParams();
+
+      if (filtroRecurso.trim()) {
+        parametros.set("recurso", filtroRecurso.trim());
+      }
+
+      if (filtroDataInicio) {
+        parametros.set("data_inicio", filtroDataInicio);
+      }
+
+      if (filtroDataFim) {
+        parametros.set("data_fim", filtroDataFim);
+      }
+
+      if (filtroHora) {
+        parametros.set("hora", filtroHora);
+      }
+
+      if (filtroUsuario.trim()) {
+        parametros.set("usuario", filtroUsuario.trim());
+      }
+
+      if (filtroStatus) {
+        parametros.set("id_status", filtroStatus);
+      }
+
+      const resposta = await fetch(
+        `${API}/reservas?${parametros.toString()}`,
+        { credentials: "include" }
+      );
+
+      const resultado = await resposta.json();
+
+      if (!resposta.ok || !Array.isArray(resultado)) {
+        throw new Error(
+          resultado.mensagem ||
+            resultado.erro ||
+            "Erro ao consultar reservas."
+        );
+      }
+
+      setDados((anterior) => ({
+        ...anterior,
+        reservas: resultado,
+      }));
+    } catch (erro) {
+      setMensagem(
+        erro.message || "Não foi possível consultar as reservas."
+      );
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  // Limpa os filtros e mostra todas as reservas
+  function limparFiltros() {
+    setFiltroRecurso("");
+    setFiltroDataInicio("");
+    setFiltroDataFim("");
+    setFiltroHora("");
+    setFiltroUsuario("");
+    setFiltroStatus("");
+    setBusca("");
+    carregarDados("reservas");
+  }
+
+  // Cadastro de usuários, laboratórios, salas e reservas
   async function cadastrar(evento) {
     evento.preventDefault();
     setMensagem("");
+
+    if (
+      secao === "reservas" &&
+      formulario.data_inicio &&
+      formulario.data_fim &&
+      formulario.data_fim < formulario.data_inicio
+    ) {
+      setMensagem("A data final não pode ser anterior à data inicial.");
+      return;
+    }
 
     try {
       const tokenResposta = await fetch(API + "/csrf-token", {
@@ -155,22 +307,27 @@ export default function Home() {
         body: JSON.stringify(formulario),
       });
 
-      const resultadoTexto = await resposta.text();
+      const texto = await resposta.text();
       let resultado;
 
       try {
-        resultado = JSON.parse(resultadoTexto);
+        resultado = JSON.parse(texto);
       } catch {
-        resultado = { mensagem: resultadoTexto };
+        resultado = { mensagem: texto };
       }
 
       if (!resposta.ok) {
         throw new Error(
-          resultado.mensagem || "Erro ao cadastrar. Confira os dados."
+          resultado.mensagem ||
+            resultado.erro ||
+            "Erro ao cadastrar. Confira os dados."
         );
       }
 
-      setMensagem(resultado.mensagem || "Cadastro realizado com sucesso!");
+      setMensagem(
+        resultado.mensagem || "Cadastro realizado com sucesso!"
+      );
+
       setFormulario({});
       evento.target.reset();
 
@@ -180,6 +337,7 @@ export default function Home() {
     }
   }
 
+  // Exclusão de registros
   async function excluir(tipo, id) {
     if (!id) {
       setMensagem("Não foi possível identificar o registro para excluir.");
@@ -215,23 +373,28 @@ export default function Home() {
         },
       });
 
-      const resultadoTexto = await resposta.text();
+      const texto = await resposta.text();
       let resultado;
 
       try {
-        resultado = JSON.parse(resultadoTexto);
+        resultado = JSON.parse(texto);
       } catch {
-        resultado = { mensagem: resultadoTexto };
+        resultado = { mensagem: texto };
       }
 
       if (!resposta.ok) {
         throw new Error(
-          resultado.mensagem || "Não foi possível excluir o registro."
+          resultado.mensagem ||
+            resultado.erro ||
+            "Não foi possível excluir o registro."
         );
       }
 
       await carregarDados(tipo);
-      setMensagem(resultado.mensagem || "Registro excluído com sucesso!");
+
+      setMensagem(
+        resultado.mensagem || "Registro excluído com sucesso!"
+      );
     } catch (erro) {
       setMensagem(erro.message || "Erro ao excluir o registro.");
     }
@@ -244,6 +407,10 @@ export default function Home() {
     setFormulario({});
     setTipoRecurso("laboratorio");
     setMenuAberto(false);
+
+    if (endpoints[id]) {
+      carregarDados(id);
+    }
   }
 
   const lista = dados[secao] || [];
@@ -270,6 +437,9 @@ export default function Home() {
       nome_usuario: "Usuário",
       nome_laboratorio: "Laboratório",
       nome_sala: "Sala",
+      codigo_laboratorio: "Código do laboratório",
+      codigo_sala: "Código da sala",
+      nome_status: "Status",
     };
 
     return (
@@ -394,7 +564,7 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
                 {[
                   { id: "usuarios", Icone: Users },
                   { id: "laboratorios", Icone: FlaskConical },
@@ -470,9 +640,7 @@ export default function Home() {
                           <input
                             required
                             type={campo.tipo}
-                            min={
-                              campo.tipo === "number" ? "1" : undefined
-                            }
+                            min={campo.tipo === "number" ? "1" : undefined}
                             value={formulario[campo.nome] || ""}
                             onChange={(evento) =>
                               setFormulario((anterior) => ({
@@ -498,237 +666,374 @@ export default function Home() {
               )}
 
               {secao === "reservas" && (
-                <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                  <div className="mb-6 flex items-center gap-3">
-                    <div className="rounded-xl bg-gray-100 p-3">
-                      <CalendarDays size={21} />
+                <>
+                  <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div className="mb-6 flex items-center gap-3">
+                      <div className="rounded-xl bg-gray-100 p-3">
+                        <CalendarDays size={21} />
+                      </div>
+
+                      <div>
+                        <h3 className="font-bold">Cadastrar reserva</h3>
+                        <p className="text-sm text-gray-500">
+                          Preencha as informações da reserva.
+                        </p>
+                      </div>
                     </div>
 
-                    <div>
-                      <h3 className="font-bold">Cadastrar reserva</h3>
-                      <p className="text-sm text-gray-500">
-                        Preencha as informações da reserva.
+                    <form onSubmit={cadastrar}>
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <label className="block text-sm font-medium">
+                          Usuário
+
+                          <select
+                            required
+                            value={formulario.id_usuario || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_usuario: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          >
+                            <option value="">Selecione um usuário</option>
+
+                            {dados.usuarios.map((usuario) => (
+                              <option
+                                key={usuario.id_usuario}
+                                value={usuario.id_usuario}
+                              >
+                                {usuario.nome} (ID {usuario.id_usuario})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Status
+
+                          <select
+                            required
+                            value={formulario.id_status || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_status: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          >
+                            <option value="">Selecione um status</option>
+
+                            {dados.status.map((status) => (
+                              <option
+                                key={status.id_status}
+                                value={status.id_status}
+                              >
+                                {status.nome}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Tipo de local
+
+                          <select
+                            required
+                            value={tipoRecurso}
+                            onChange={(evento) => {
+                              const novoTipo = evento.target.value;
+
+                              setTipoRecurso(novoTipo);
+
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_laboratorio:
+                                  novoTipo === "laboratorio"
+                                    ? anterior.id_laboratorio || ""
+                                    : "",
+                                id_sala:
+                                  novoTipo === "sala"
+                                    ? anterior.id_sala || ""
+                                    : "",
+                              }));
+                            }}
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          >
+                            <option value="laboratorio">Laboratório</option>
+                            <option value="sala">Sala de aula</option>
+                          </select>
+                        </label>
+
+                        {tipoRecurso === "laboratorio" ? (
+                          <label className="block text-sm font-medium">
+                            Laboratório
+
+                            <select
+                              required
+                              value={formulario.id_laboratorio || ""}
+                              onChange={(evento) =>
+                                setFormulario((anterior) => ({
+                                  ...anterior,
+                                  id_laboratorio: evento.target.value,
+                                  id_sala: "",
+                                }))
+                              }
+                              className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                            >
+                              <option value="">
+                                Selecione um laboratório
+                              </option>
+
+                              {dados.laboratorios.map((lab) => (
+                                <option
+                                  key={lab.id_laboratorio}
+                                  value={lab.id_laboratorio}
+                                >
+                                  {lab.codigo} - {lab.nome}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : (
+                          <label className="block text-sm font-medium">
+                            Sala de aula
+
+                            <select
+                              required
+                              value={formulario.id_sala || ""}
+                              onChange={(evento) =>
+                                setFormulario((anterior) => ({
+                                  ...anterior,
+                                  id_sala: evento.target.value,
+                                  id_laboratorio: "",
+                                }))
+                              }
+                              className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                            >
+                              <option value="">Selecione uma sala</option>
+
+                              {dados.salas.map((sala) => (
+                                <option
+                                  key={sala.id_sala}
+                                  value={sala.id_sala}
+                                >
+                                  {sala.codigo} - {sala.nome}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+
+                        <label className="block text-sm font-medium">
+                          Data de início
+
+                          <input
+                            required
+                            type="date"
+                            value={formulario.data_inicio || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                data_inicio: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Data de término
+
+                          <input
+                            required
+                            type="date"
+                            value={formulario.data_fim || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                data_fim: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Hora de início
+
+                          <input
+                            required
+                            type="time"
+                            value={formulario.hora_inicio || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                hora_inicio: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Hora de término
+
+                          <input
+                            required
+                            type="time"
+                            value={formulario.hora_fim || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                hora_fim: evento.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="mt-6 flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                      >
+                        <Plus size={17} />
+                        Cadastrar reserva
+                      </button>
+                    </form>
+                  </section>
+
+                  {/* Filtros de consulta */}
+                  <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div className="mb-6">
+                      <h3 className="text-lg font-bold">
+                        Consultar reservas
+                      </h3>
+
+                      <p className="mt-1 text-sm text-gray-500">
+                        Pesquise por recurso, data, horário, usuário ou status.
                       </p>
                     </div>
-                  </div>
 
-                  <form onSubmit={cadastrar}>
-                    <div className="grid gap-5 sm:grid-cols-2">
-                      <label className="block text-sm font-medium">
-                        Usuário
-                        <select
-                          required
-                          value={formulario.id_usuario || ""}
-                          onChange={(evento) =>
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              id_usuario: evento.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        >
-                          <option value="">Selecione um usuário</option>
-
-                          {dados.usuarios.map((usuario) => (
-                            <option
-                              key={usuario.id_usuario}
-                              value={usuario.id_usuario}
-                            >
-                              {usuario.nome} (ID {usuario.id_usuario})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="block text-sm font-medium">
-                        Status
-                        <select
-                          required
-                          value={formulario.id_status || ""}
-                          onChange={(evento) =>
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              id_status: evento.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        >
-                          <option value="">Selecione um status</option>
-
-                          {dados.status.map((status) => (
-                            <option
-                              key={status.id_status}
-                              value={status.id_status}
-                            >
-                              {status.nome ||
-                                status.descricao ||
-                                `Status ${status.id_status}`}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="block text-sm font-medium">
-                        Tipo de local
-                        <select
-                          required
-                          value={tipoRecurso}
-                          onChange={(evento) => {
-                            const novoTipo = evento.target.value;
-
-                            setTipoRecurso(novoTipo);
-
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              id_laboratorio:
-                                novoTipo === "laboratorio"
-                                  ? anterior.id_laboratorio || ""
-                                  : "",
-                              id_sala:
-                                novoTipo === "sala"
-                                  ? anterior.id_sala || ""
-                                  : "",
-                            }));
-                          }}
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        >
-                          <option value="laboratorio">Laboratório</option>
-                          <option value="sala">Sala de aula</option>
-                        </select>
-                      </label>
-
-                      {tipoRecurso === "laboratorio" ? (
+                    <form onSubmit={buscarReservas}>
+                      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                         <label className="block text-sm font-medium">
-                          Laboratório
-                          <select
-                            required
-                            value={formulario.id_laboratorio || ""}
+                          Código ou nome do recurso
+
+                          <input
+                            type="text"
+                            value={filtroRecurso}
                             onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                id_laboratorio: evento.target.value,
-                                id_sala: "",
-                              }))
+                              setFiltroRecurso(evento.target.value)
+                            }
+                            placeholder="Código ou nome"
+                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Data inicial
+
+                          <input
+                            type="date"
+                            value={filtroDataInicio}
+                            onChange={(evento) =>
+                              setFiltroDataInicio(evento.target.value)
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Data final
+
+                          <input
+                            type="date"
+                            value={filtroDataFim}
+                            onChange={(evento) =>
+                              setFiltroDataFim(evento.target.value)
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Horário
+
+                          <input
+                            type="time"
+                            value={filtroHora}
+                            onChange={(evento) =>
+                              setFiltroHora(evento.target.value)
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Usuário
+
+                          <input
+                            type="text"
+                            value={filtroUsuario}
+                            onChange={(evento) =>
+                              setFiltroUsuario(evento.target.value)
+                            }
+                            placeholder="Nome do usuário"
+                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
+                          />
+                        </label>
+
+                        <label className="block text-sm font-medium">
+                          Status
+
+                          <select
+                            value={filtroStatus}
+                            onChange={(evento) =>
+                              setFiltroStatus(evento.target.value)
                             }
                             className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
                           >
-                            <option value="">Selecione um laboratório</option>
+                            <option value="">Todos os status</option>
 
-                            {dados.laboratorios.map((lab) => (
+                            {dados.status.map((status) => (
                               <option
-                                key={lab.id_laboratorio}
-                                value={lab.id_laboratorio}
+                                key={status.id_status}
+                                value={status.id_status}
                               >
-                                {lab.nome} (ID {lab.id_laboratorio})
+                                {status.nome}
                               </option>
                             ))}
                           </select>
                         </label>
-                      ) : (
-                        <label className="block text-sm font-medium">
-                          Sala de aula
-                          <select
-                            required
-                            value={formulario.id_sala || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                id_sala: evento.target.value,
-                                id_laboratorio: "",
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          >
-                            <option value="">Selecione uma sala</option>
+                      </div>
 
-                            {dados.salas.map((sala) => (
-                              <option
-                                key={sala.id_sala}
-                                value={sala.id_sala}
-                              >
-                                {sala.nome} (ID {sala.id_sala})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
+                      <div className="mt-6 flex flex-wrap gap-3">
+                        <button
+                          type="submit"
+                          className="flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                        >
+                          <Search size={17} />
+                          Pesquisar
+                        </button>
 
-                      <label className="block text-sm font-medium">
-                        Data de início
-                        <input
-                          required
-                          type="date"
-                          value={formulario.data_inicio || ""}
-                          onChange={(evento) =>
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              data_inicio: evento.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium">
-                        Data de término
-                        <input
-                          required
-                          type="date"
-                          value={formulario.data_fim || ""}
-                          onChange={(evento) =>
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              data_fim: evento.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium">
-                        Hora de início
-                        <input
-                          required
-                          type="time"
-                          value={formulario.hora_inicio || ""}
-                          onChange={(evento) =>
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              hora_inicio: evento.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium">
-                        Hora de término
-                        <input
-                          required
-                          type="time"
-                          value={formulario.hora_fim || ""}
-                          onChange={(evento) =>
-                            setFormulario((anterior) => ({
-                              ...anterior,
-                              hora_fim: evento.target.value,
-                            }))
-                          }
-                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                        />
-                      </label>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="mt-6 flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
-                    >
-                      <Plus size={17} />
-                      Cadastrar reserva
-                    </button>
-                  </form>
-                </section>
+                        <button
+                          type="button"
+                          onClick={limparFiltros}
+                          className="rounded-xl border border-gray-200 px-5 py-3 text-sm font-semibold hover:bg-gray-50"
+                        >
+                          Limpar filtros
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                </>
               )}
 
+              {/* Lista */}
               <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -750,14 +1055,14 @@ export default function Home() {
                     <input
                       value={busca}
                       onChange={(evento) => setBusca(evento.target.value)}
-                      placeholder="Pesquisar..."
+                      placeholder="Pesquisar na lista..."
                       className="w-full rounded-xl border border-gray-200 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-black sm:w-64"
                     />
                   </div>
                 </div>
 
                 {mensagem && (
-                  <p className="border-b border-gray-100 px-5 py-3 text-sm">
+                  <p className="border-b border-gray-100 px-5 py-3 text-sm text-gray-700">
                     {mensagem}
                   </p>
                 )}
@@ -840,10 +1145,6 @@ export default function Home() {
                 )}
               </section>
             </>
-          )}
-
-          {mensagem && secao === "inicio" && (
-            <p className="text-sm text-gray-600">{mensagem}</p>
           )}
         </div>
       </main>
