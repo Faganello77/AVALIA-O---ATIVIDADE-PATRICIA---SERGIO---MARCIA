@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Users,
   FlaskConical,
@@ -13,9 +13,23 @@ import {
   Menu,
   X,
   CalendarDays,
+  LogOut,
 } from "lucide-react";
 
 const API = "http://localhost:3000";
+
+// Lê respostas JSON ou texto sem gerar SyntaxError.
+async function lerResposta(resposta) {
+  const texto = await resposta.text();
+
+  if (!texto) return {};
+
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return { mensagem: texto };
+  }
+}
 
 const secoes = [
   { id: "inicio", nome: "Visão geral", Icone: LayoutDashboard },
@@ -30,22 +44,20 @@ const campos = {
   usuarios: [
     { nome: "cpf", rotulo: "CPF", tipo: "text" },
     { nome: "nome", rotulo: "Nome completo", tipo: "text" },
-    {
-      nome: "data_nascimento",
-      rotulo: "Data de nascimento",
-      tipo: "date",
-    },
+    { nome: "data_nascimento", rotulo: "Data de nascimento", tipo: "date" },
     { nome: "celular", rotulo: "Celular", tipo: "text" },
     { nome: "email", rotulo: "E-mail", tipo: "email" },
     { nome: "login", rotulo: "Login", tipo: "text" },
     { nome: "senha", rotulo: "Senha", tipo: "password" },
   ],
+
   laboratorios: [
     { nome: "codigo", rotulo: "Código", tipo: "text" },
     { nome: "nome", rotulo: "Nome do laboratório", tipo: "text" },
     { nome: "capacidade", rotulo: "Capacidade", tipo: "number" },
     { nome: "localizacao", rotulo: "Localização", tipo: "text" },
   ],
+
   salas: [
     { nome: "codigo", rotulo: "Código", tipo: "text" },
     { nome: "nome", rotulo: "Nome da sala", tipo: "text" },
@@ -85,217 +97,254 @@ export default function Home() {
   const [busca, setBusca] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [saindo, setSaindo] = useState(false);
+  const [usuarioLogado, setUsuarioLogado] = useState(null);
   const [menuAberto, setMenuAberto] = useState(false);
-
-  // Declarado apenas uma vez
   const [tipoRecurso, setTipoRecurso] = useState("laboratorio");
 
-  // Filtros da consulta
-  const [filtroRecurso, setFiltroRecurso] = useState("");
-  const [filtroDataInicio, setFiltroDataInicio] = useState("");
-  const [filtroDataFim, setFiltroDataFim] = useState("");
-  const [filtroHora, setFiltroHora] = useState("");
-  const [filtroUsuario, setFiltroUsuario] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("");
+  // Evita repetir uma mesma requisição enquanto ela está em andamento.
+  const requisicoesAtivas = useRef(new Map());
 
-  // Carrega os dados de uma seção
-  async function carregarDados(tipo) {
-    if (!endpoints[tipo]) return;
+  // Nome da conta conectada.
+  const nomeConta =
+    usuarioLogado?.nome ||
+    usuarioLogado?.login ||
+    usuarioLogado?.username ||
+    usuarioLogado?.usuario ||
+    usuarioLogado?.email ||
+    usuarioLogado?.name ||
+    "";
 
-    setCarregando(true);
+  // Carrega os registros de uma seção.
+  async function carregarDados(tipo, opcoes = {}) {
+    if (!endpoints[tipo]) return "erro";
+
+    // Reutiliza uma chamada que já estiver em andamento.
+    if (requisicoesAtivas.current.has(tipo)) {
+      return requisicoesAtivas.current.get(tipo);
+    }
+
+    const requisicao = (async () => {
+      setCarregando(true);
+
+      if (opcoes.limparMensagem !== false) {
+        setMensagem("");
+      }
+
+      try {
+        const resposta = await fetch(`${API}${endpoints[tipo]}`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        // A resposta pode ser JSON ou texto simples.
+        const resultado = await lerResposta(resposta);
+
+        if (!resposta.ok) {
+          if (resposta.status === 429) {
+            setMensagem(
+              "A API recebeu muitas requisições. Aguarde um pouco antes de tentar novamente."
+            );
+
+            return "limite";
+          }
+
+          throw new Error(
+            resultado.mensagem ||
+              `Erro ao carregar ${nomes[tipo]}.`
+          );
+        }
+
+        if (!Array.isArray(resultado)) {
+          throw new Error(
+            resultado.mensagem ||
+              `A API retornou dados inválidos para ${nomes[tipo]}.`
+          );
+        }
+
+        setDados((anterior) => ({
+          ...anterior,
+          [tipo]: resultado,
+        }));
+
+        return "ok";
+      } catch (erro) {
+        console.error(`Erro ao carregar ${tipo}:`, erro);
+
+        setMensagem(
+          erro.message ||
+            "Não foi possível carregar os dados. Confira se a API está ligada."
+        );
+
+        return "erro";
+      } finally {
+        requisicoesAtivas.current.delete(tipo);
+        setCarregando(false);
+      }
+    })();
+
+    requisicoesAtivas.current.set(tipo, requisicao);
+
+    return requisicao;
+  }
+
+  // Na Visão Geral, carrega um endpoint por vez.
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregarSecao() {
+      setMensagem("");
+
+      const tipos =
+        secao === "inicio"
+          ? [
+              "usuarios",
+              "laboratorios",
+              "salas",
+              "status",
+              "reservas",
+            ]
+          : endpoints[secao]
+            ? [secao]
+            : [];
+
+      for (const tipo of tipos) {
+        if (!ativo) return;
+
+        const resultado = await carregarDados(tipo, {
+          limparMensagem: false,
+        });
+
+        // Ao receber HTTP 429, interrompe as chamadas seguintes.
+        if (resultado === "limite") {
+          return;
+        }
+      }
+    }
+
+    carregarSecao();
+
+    return () => {
+      ativo = false;
+    };
+  }, [secao]);
+
+  // Busca a conta autenticada pela sessão do backend.
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregarUsuarioLogado() {
+      try {
+        const resposta = await fetch(`${API}/auth/sessao`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const resultado = await lerResposta(resposta);
+
+        if (!resposta.ok) return;
+
+        const conta =
+          resultado.usuario ??
+          resultado.user ??
+          resultado.conta ??
+          resultado.sessao?.user ??
+          resultado.dados?.usuario ??
+          resultado;
+
+        if (ativo && conta && typeof conta === "object") {
+          setUsuarioLogado(conta);
+        }
+      } catch (erro) {
+        console.error(
+          "Não foi possível carregar a conta:",
+          erro
+        );
+      }
+    }
+
+    carregarUsuarioLogado();
+
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  // Encerra a sessão e retorna ao login.
+  async function sair() {
+    if (saindo) return;
+
+    setSaindo(true);
     setMensagem("");
 
     try {
-      const resposta = await fetch(API + endpoints[tipo], {
+      const tokenResposta = await fetch(`${API}/csrf-token`, {
+        method: "GET",
         credentials: "include",
+        cache: "no-store",
       });
 
-      const resultado = await resposta.json();
+      const token = await lerResposta(tokenResposta);
+
+      if (!tokenResposta.ok || !token.csrfToken) {
+        throw new Error(
+          "Não foi possível validar a saída. Atualize a página e tente novamente."
+        );
+      }
+
+      const resposta = await fetch(`${API}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+        headers: {
+          "x-csrf-token": token.csrfToken,
+        },
+      });
+
+      const resultado = await lerResposta(resposta);
 
       if (!resposta.ok) {
         throw new Error(
           resultado.mensagem ||
-            resultado.erro ||
-            "Erro ao carregar os dados."
+            "Não foi possível encerrar a sessão. Confira a rota /auth/logout da API."
         );
       }
 
-      if (!Array.isArray(resultado)) {
-        throw new Error("A API não retornou uma lista.");
-      }
-
-      setDados((anterior) => ({
-        ...anterior,
-        [tipo]: resultado,
-      }));
+      window.location.replace("/login");
     } catch (erro) {
+      console.error("Erro ao sair:", erro);
+
       setMensagem(
         erro.message ||
-          "Não foi possível carregar os dados. Confira se a API está ligada."
+          "Ocorreu um erro ao encerrar a sessão."
       );
-    } finally {
-      setCarregando(false);
+
+      setSaindo(false);
     }
   }
 
-  // Carrega todas as listas quando a página abre
-  useEffect(() => {
-    async function carregarTudo() {
-      setCarregando(true);
-
-      try {
-        const tipos = [
-          "usuarios",
-          "laboratorios",
-          "salas",
-          "status",
-          "reservas",
-        ];
-
-        const resultados = await Promise.all(
-          tipos.map(async (tipo) => {
-            const resposta = await fetch(API + endpoints[tipo], {
-              credentials: "include",
-            });
-
-            const resultado = await resposta.json();
-
-            if (!resposta.ok || !Array.isArray(resultado)) {
-              throw new Error(
-                resultado.mensagem ||
-                  resultado.erro ||
-                  `Erro ao carregar ${nomes[tipo]}.`
-              );
-            }
-
-            return [tipo, resultado];
-          })
-        );
-
-        setDados((anterior) => ({
-          ...anterior,
-          ...Object.fromEntries(resultados),
-        }));
-      } catch (erro) {
-        setMensagem(
-          erro.message || "Não foi possível carregar os dados."
-        );
-      } finally {
-        setCarregando(false);
-      }
-    }
-
-    carregarTudo();
-  }, []);
-
-  // Pesquisa reservas usando os filtros
-  async function buscarReservas(evento) {
-    evento.preventDefault();
-
-    if (
-      filtroDataInicio &&
-      filtroDataFim &&
-      filtroDataFim < filtroDataInicio
-    ) {
-      setMensagem("A data final não pode ser anterior à data inicial.");
-      return;
-    }
-
-    setCarregando(true);
-    setMensagem("");
-
-    try {
-      const parametros = new URLSearchParams();
-
-      if (filtroRecurso.trim()) {
-        parametros.set("recurso", filtroRecurso.trim());
-      }
-
-      if (filtroDataInicio) {
-        parametros.set("data_inicio", filtroDataInicio);
-      }
-
-      if (filtroDataFim) {
-        parametros.set("data_fim", filtroDataFim);
-      }
-
-      if (filtroHora) {
-        parametros.set("hora", filtroHora);
-      }
-
-      if (filtroUsuario.trim()) {
-        parametros.set("usuario", filtroUsuario.trim());
-      }
-
-      if (filtroStatus) {
-        parametros.set("id_status", filtroStatus);
-      }
-
-      const resposta = await fetch(
-        `${API}/reservas?${parametros.toString()}`,
-        { credentials: "include" }
-      );
-
-      const resultado = await resposta.json();
-
-      if (!resposta.ok || !Array.isArray(resultado)) {
-        throw new Error(
-          resultado.mensagem ||
-            resultado.erro ||
-            "Erro ao consultar reservas."
-        );
-      }
-
-      setDados((anterior) => ({
-        ...anterior,
-        reservas: resultado,
-      }));
-    } catch (erro) {
-      setMensagem(
-        erro.message || "Não foi possível consultar as reservas."
-      );
-    } finally {
-      setCarregando(false);
-    }
-  }
-
-  // Limpa os filtros e mostra todas as reservas
-  function limparFiltros() {
-    setFiltroRecurso("");
-    setFiltroDataInicio("");
-    setFiltroDataFim("");
-    setFiltroHora("");
-    setFiltroUsuario("");
-    setFiltroStatus("");
-    setBusca("");
-    carregarDados("reservas");
-  }
-
-  // Cadastro de usuários, laboratórios, salas e reservas
+  // Cadastra usuários, laboratórios, salas ou reservas.
   async function cadastrar(evento) {
     evento.preventDefault();
     setMensagem("");
 
-    if (
-      secao === "reservas" &&
-      formulario.data_inicio &&
-      formulario.data_fim &&
-      formulario.data_fim < formulario.data_inicio
-    ) {
-      setMensagem("A data final não pode ser anterior à data inicial.");
-      return;
-    }
-
     try {
-      const tokenResposta = await fetch(API + "/csrf-token", {
+      const tokenResposta = await fetch(`${API}/csrf-token`, {
+        method: "GET",
         credentials: "include",
+        cache: "no-store",
       });
 
-      if (!tokenResposta.ok) {
-        throw new Error("Não foi possível obter o token de segurança.");
-      }
+      const token = await lerResposta(tokenResposta);
 
-      const token = await tokenResposta.json();
+      if (!tokenResposta.ok || !token.csrfToken) {
+        throw new Error(
+          token.mensagem ||
+            "Não foi possível obter o token de segurança."
+        );
+      }
 
       const resposta = await fetch(API + endpoints[secao], {
         method: "POST",
@@ -307,40 +356,40 @@ export default function Home() {
         body: JSON.stringify(formulario),
       });
 
-      const texto = await resposta.text();
-      let resultado;
-
-      try {
-        resultado = JSON.parse(texto);
-      } catch {
-        resultado = { mensagem: texto };
-      }
+      const resultado = await lerResposta(resposta);
 
       if (!resposta.ok) {
         throw new Error(
           resultado.mensagem ||
-            resultado.erro ||
             "Erro ao cadastrar. Confira os dados."
         );
       }
 
       setMensagem(
-        resultado.mensagem || "Cadastro realizado com sucesso!"
+        resultado.mensagem ||
+          "Cadastro realizado com sucesso!"
       );
 
       setFormulario({});
       evento.target.reset();
 
-      await carregarDados(secao);
+      await carregarDados(secao, {
+        limparMensagem: false,
+      });
     } catch (erro) {
-      setMensagem(erro.message || "Erro ao cadastrar.");
+      setMensagem(
+        erro.message || "Erro ao cadastrar."
+      );
     }
   }
 
-  // Exclusão de registros
+  // Exclui um registro.
   async function excluir(tipo, id) {
     if (!id) {
-      setMensagem("Não foi possível identificar o registro para excluir.");
+      setMensagem(
+        "Não foi possível identificar o registro para excluir."
+      );
+
       return;
     }
 
@@ -355,51 +404,57 @@ export default function Home() {
     setMensagem("");
 
     try {
-      const tokenResposta = await fetch(API + "/csrf-token", {
+      const tokenResposta = await fetch(`${API}/csrf-token`, {
+        method: "GET",
         credentials: "include",
+        cache: "no-store",
       });
 
-      if (!tokenResposta.ok) {
-        throw new Error("Não foi possível obter o token de segurança.");
+      const token = await lerResposta(tokenResposta);
+
+      if (!tokenResposta.ok || !token.csrfToken) {
+        throw new Error(
+          token.mensagem ||
+            "Não foi possível obter o token de segurança."
+        );
       }
 
-      const token = await tokenResposta.json();
+      const resposta = await fetch(
+        `${API}${endpoints[tipo]}/${id}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            "x-csrf-token": token.csrfToken,
+          },
+        }
+      );
 
-      const resposta = await fetch(`${API}${endpoints[tipo]}/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: {
-          "x-csrf-token": token.csrfToken,
-        },
-      });
-
-      const texto = await resposta.text();
-      let resultado;
-
-      try {
-        resultado = JSON.parse(texto);
-      } catch {
-        resultado = { mensagem: texto };
-      }
+      const resultado = await lerResposta(resposta);
 
       if (!resposta.ok) {
         throw new Error(
           resultado.mensagem ||
-            resultado.erro ||
             "Não foi possível excluir o registro."
         );
       }
 
-      await carregarDados(tipo);
+      await carregarDados(tipo, {
+        limparMensagem: false,
+      });
 
       setMensagem(
-        resultado.mensagem || "Registro excluído com sucesso!"
+        resultado.mensagem ||
+          "Registro excluído com sucesso!"
       );
     } catch (erro) {
-      setMensagem(erro.message || "Erro ao excluir o registro.");
+      setMensagem(
+        erro.message || "Erro ao excluir o registro."
+      );
     }
   }
 
+  // Troca de seção.
   function selecionar(id) {
     setSecao(id);
     setBusca("");
@@ -407,20 +462,19 @@ export default function Home() {
     setFormulario({});
     setTipoRecurso("laboratorio");
     setMenuAberto(false);
-
-    if (endpoints[id]) {
-      carregarDados(id);
-    }
   }
 
   const lista = dados[secao] || [];
 
   const filtrados = lista.filter((item) =>
     Object.values(item).some((valor) =>
-      String(valor ?? "").toLowerCase().includes(busca.toLowerCase())
+      String(valor ?? "")
+        .toLowerCase()
+        .includes(busca.toLowerCase())
     )
   );
 
+  // Traduz os nomes das colunas.
   function nomeColuna(coluna) {
     const traducoes = {
       id_reserva: "ID da reserva",
@@ -437,17 +491,31 @@ export default function Home() {
       nome_usuario: "Usuário",
       nome_laboratorio: "Laboratório",
       nome_sala: "Sala",
-      codigo_laboratorio: "Código do laboratório",
-      codigo_sala: "Código da sala",
-      nome_status: "Status",
     };
 
     return (
       traducoes[coluna] ||
-      coluna.replaceAll("_", " ").replace(/^./, (letra) => letra.toUpperCase())
+      coluna
+        .replaceAll("_", " ")
+        .replace(/^./, (letra) => letra.toUpperCase())
     );
   }
 
+  // Converte datas para o padrão brasileiro.
+  function formatarData(valor) {
+    if (
+      typeof valor !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(valor)
+    ) {
+      return valor;
+    }
+
+    const [ano, mes, dia] = valor.split("-");
+
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  // Identifica o ID de cada registro.
   function obterId(item, tipo) {
     if (tipo === "usuarios") return item.id_usuario;
     if (tipo === "salas") return item.id_sala;
@@ -459,6 +527,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
+      {/* MENU LATERAL */}
       <aside
         className={`fixed inset-y-0 left-0 z-30 w-64 border-r border-gray-200 bg-white p-5 transition-transform md:translate-x-0 ${
           menuAberto ? "translate-x-0" : "-translate-x-full"
@@ -472,11 +541,15 @@ export default function Home() {
 
             <div>
               <h1 className="font-bold">Reserva de Salas</h1>
-              <p className="text-xs text-gray-500">Painel administrativo</p>
+
+              <p className="text-xs text-gray-500">
+                Painel administrativo
+              </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={() => setMenuAberto(false)}
             className="md:hidden"
             aria-label="Fechar menu"
@@ -492,6 +565,7 @@ export default function Home() {
         <nav className="space-y-2">
           {secoes.map(({ id, nome, Icone }) => (
             <button
+              type="button"
               key={id}
               onClick={() => selecionar(id)}
               className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm ${
@@ -507,23 +581,32 @@ export default function Home() {
         </nav>
 
         <div className="absolute bottom-5 left-5 right-5 rounded-xl bg-gray-50 p-4">
-          <p className="text-sm font-medium">Sistema de reservas</p>
-          <p className="mt-1 text-xs text-gray-500">Projeto acadêmico</p>
+          <p className="text-sm font-medium">
+            Sistema de reservas
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
+            Projeto acadêmico
+          </p>
         </div>
       </aside>
 
+      {/* FUNDO DO MENU NO CELULAR */}
       {menuAberto && (
         <button
+          type="button"
           aria-label="Fechar menu"
           onClick={() => setMenuAberto(false)}
           className="fixed inset-0 z-20 bg-black/30 md:hidden"
         />
       )}
 
+      {/* CONTEÚDO PRINCIPAL */}
       <main className="min-h-screen md:ml-64">
         <header className="flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4 md:px-8">
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() => setMenuAberto(true)}
               className="rounded-lg p-2 hover:bg-gray-100 md:hidden"
               aria-label="Abrir menu"
@@ -542,29 +625,64 @@ export default function Home() {
             </div>
           </div>
 
-          {endpoints[secao] && (
-            <button
-              onClick={() => carregarDados(secao)}
-              className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
-            >
-              <RefreshCw size={16} />
-              Atualizar
-            </button>
-          )}
+          {/* ATUALIZAR, CONTA E SAIR */}
+          <div className="flex items-center gap-3">
+            {endpoints[secao] && (
+              <button
+                type="button"
+                onClick={() => carregarDados(secao)}
+                disabled={saindo || carregando}
+                className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw size={16} />
+                Atualizar
+              </button>
+            )}
+
+            <div className="flex flex-col items-end gap-1">
+              <div className="max-w-[180px] text-right leading-tight">
+                <p className="text-[11px] text-gray-500">
+                  Conta conectada
+                </p>
+
+                <p
+                  className="truncate text-sm font-semibold"
+                  title={nomeConta || "Conta conectada"}
+                >
+                  {nomeConta || "Carregando conta..."}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={sair}
+                disabled={saindo}
+                className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <LogOut size={16} />
+                {saindo ? "Saindo..." : "Sair"}
+              </button>
+            </div>
+          </div>
         </header>
 
         <div className="space-y-6 p-5 md:p-8">
+          {/* VISÃO GERAL */}
           {secao === "inicio" ? (
             <>
               <div>
-                <h3 className="text-2xl font-bold">Bem-vindo!</h3>
+                <h3 className="text-2xl font-bold">
+                  Bem-vindo
+                  {nomeConta ? `, ${nomeConta}` : ""}!
+                </h3>
 
                 <p className="mt-1 text-gray-500">
                   Gerencie os cadastros e consulte as informações do sistema.
                 </p>
               </div>
 
-              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {/* CARDS DA VISÃO GERAL */}
+              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 {[
                   { id: "usuarios", Icone: Users },
                   { id: "laboratorios", Icone: FlaskConical },
@@ -573,6 +691,7 @@ export default function Home() {
                   { id: "reservas", Icone: CalendarDays },
                 ].map(({ id, Icone }) => (
                   <button
+                    type="button"
                     key={id}
                     onClick={() => selecionar(id)}
                     className="rounded-2xl border border-gray-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
@@ -581,7 +700,9 @@ export default function Home() {
                       <Icone size={22} />
                     </div>
 
-                    <p className="text-sm text-gray-500">{nomes[id]}</p>
+                    <p className="text-sm text-gray-500">
+                      {nomes[id]}
+                    </p>
 
                     <p className="mt-1 text-3xl font-bold">
                       {dados[id].length}
@@ -605,6 +726,7 @@ export default function Home() {
             </>
           ) : (
             <>
+              {/* FORMULÁRIO DE CADASTRO */}
               {campos[secao] && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                   <div className="mb-6 flex items-center gap-3">
@@ -640,7 +762,9 @@ export default function Home() {
                           <input
                             required
                             type={campo.tipo}
-                            min={campo.tipo === "number" ? "1" : undefined}
+                            min={
+                              campo.tipo === "number" ? "1" : undefined
+                            }
                             value={formulario[campo.nome] || ""}
                             onChange={(evento) =>
                               setFormulario((anterior) => ({
@@ -665,375 +789,267 @@ export default function Home() {
                 </section>
               )}
 
+              {/* FORMULÁRIO DE RESERVAS */}
               {secao === "reservas" && (
-                <>
-                  <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="mb-6 flex items-center gap-3">
-                      <div className="rounded-xl bg-gray-100 p-3">
-                        <CalendarDays size={21} />
-                      </div>
-
-                      <div>
-                        <h3 className="font-bold">Cadastrar reserva</h3>
-                        <p className="text-sm text-gray-500">
-                          Preencha as informações da reserva.
-                        </p>
-                      </div>
+                <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <div className="mb-6 flex items-center gap-3">
+                    <div className="rounded-xl bg-gray-100 p-3">
+                      <CalendarDays size={21} />
                     </div>
 
-                    <form onSubmit={cadastrar}>
-                      <div className="grid gap-5 sm:grid-cols-2">
-                        <label className="block text-sm font-medium">
-                          Usuário
-
-                          <select
-                            required
-                            value={formulario.id_usuario || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                id_usuario: evento.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          >
-                            <option value="">Selecione um usuário</option>
-
-                            {dados.usuarios.map((usuario) => (
-                              <option
-                                key={usuario.id_usuario}
-                                value={usuario.id_usuario}
-                              >
-                                {usuario.nome} (ID {usuario.id_usuario})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Status
-
-                          <select
-                            required
-                            value={formulario.id_status || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                id_status: evento.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          >
-                            <option value="">Selecione um status</option>
-
-                            {dados.status.map((status) => (
-                              <option
-                                key={status.id_status}
-                                value={status.id_status}
-                              >
-                                {status.nome}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Tipo de local
-
-                          <select
-                            required
-                            value={tipoRecurso}
-                            onChange={(evento) => {
-                              const novoTipo = evento.target.value;
-
-                              setTipoRecurso(novoTipo);
-
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                id_laboratorio:
-                                  novoTipo === "laboratorio"
-                                    ? anterior.id_laboratorio || ""
-                                    : "",
-                                id_sala:
-                                  novoTipo === "sala"
-                                    ? anterior.id_sala || ""
-                                    : "",
-                              }));
-                            }}
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          >
-                            <option value="laboratorio">Laboratório</option>
-                            <option value="sala">Sala de aula</option>
-                          </select>
-                        </label>
-
-                        {tipoRecurso === "laboratorio" ? (
-                          <label className="block text-sm font-medium">
-                            Laboratório
-
-                            <select
-                              required
-                              value={formulario.id_laboratorio || ""}
-                              onChange={(evento) =>
-                                setFormulario((anterior) => ({
-                                  ...anterior,
-                                  id_laboratorio: evento.target.value,
-                                  id_sala: "",
-                                }))
-                              }
-                              className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                            >
-                              <option value="">
-                                Selecione um laboratório
-                              </option>
-
-                              {dados.laboratorios.map((lab) => (
-                                <option
-                                  key={lab.id_laboratorio}
-                                  value={lab.id_laboratorio}
-                                >
-                                  {lab.codigo} - {lab.nome}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : (
-                          <label className="block text-sm font-medium">
-                            Sala de aula
-
-                            <select
-                              required
-                              value={formulario.id_sala || ""}
-                              onChange={(evento) =>
-                                setFormulario((anterior) => ({
-                                  ...anterior,
-                                  id_sala: evento.target.value,
-                                  id_laboratorio: "",
-                                }))
-                              }
-                              className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                            >
-                              <option value="">Selecione uma sala</option>
-
-                              {dados.salas.map((sala) => (
-                                <option
-                                  key={sala.id_sala}
-                                  value={sala.id_sala}
-                                >
-                                  {sala.codigo} - {sala.nome}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
-
-                        <label className="block text-sm font-medium">
-                          Data de início
-
-                          <input
-                            required
-                            type="date"
-                            value={formulario.data_inicio || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                data_inicio: evento.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Data de término
-
-                          <input
-                            required
-                            type="date"
-                            value={formulario.data_fim || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                data_fim: evento.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Hora de início
-
-                          <input
-                            required
-                            type="time"
-                            value={formulario.hora_inicio || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                hora_inicio: evento.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Hora de término
-
-                          <input
-                            required
-                            type="time"
-                            value={formulario.hora_fim || ""}
-                            onChange={(evento) =>
-                              setFormulario((anterior) => ({
-                                ...anterior,
-                                hora_fim: evento.target.value,
-                              }))
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="mt-6 flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
-                      >
-                        <Plus size={17} />
+                    <div>
+                      <h3 className="font-bold">
                         Cadastrar reserva
-                      </button>
-                    </form>
-                  </section>
-
-                  {/* Filtros de consulta */}
-                  <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="mb-6">
-                      <h3 className="text-lg font-bold">
-                        Consultar reservas
                       </h3>
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        Pesquise por recurso, data, horário, usuário ou status.
+                      <p className="text-sm text-gray-500">
+                        Preencha as informações da reserva.
                       </p>
                     </div>
+                  </div>
 
-                    <form onSubmit={buscarReservas}>
-                      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  <form onSubmit={cadastrar}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <label className="block text-sm font-medium">
+                        Usuário
+
+                        <select
+                          required
+                          value={formulario.id_usuario || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              id_usuario: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        >
+                          <option value="">
+                            Selecione um usuário
+                          </option>
+
+                          {dados.usuarios.map((usuario) => (
+                            <option
+                              key={usuario.id_usuario}
+                              value={usuario.id_usuario}
+                            >
+                              {usuario.nome} (ID {usuario.id_usuario})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Status
+
+                        <select
+                          required
+                          value={formulario.id_status || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              id_status: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        >
+                          <option value="">
+                            Selecione um status
+                          </option>
+
+                          {dados.status.map((status) => (
+                            <option
+                              key={status.id_status}
+                              value={status.id_status}
+                            >
+                              {status.nome ||
+                                status.descricao ||
+                                `Status ${status.id_status}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Tipo de local
+
+                        <select
+                          required
+                          value={tipoRecurso}
+                          onChange={(evento) => {
+                            const novoTipo = evento.target.value;
+
+                            setTipoRecurso(novoTipo);
+
+                            setFormulario((anterior) => ({
+                              ...anterior,
+
+                              id_laboratorio:
+                                novoTipo === "laboratorio"
+                                  ? anterior.id_laboratorio || ""
+                                  : "",
+
+                              id_sala:
+                                novoTipo === "sala"
+                                  ? anterior.id_sala || ""
+                                  : "",
+                            }));
+                          }}
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        >
+                          <option value="laboratorio">
+                            Laboratório
+                          </option>
+
+                          <option value="sala">
+                            Sala de aula
+                          </option>
+                        </select>
+                      </label>
+
+                      {tipoRecurso === "laboratorio" ? (
                         <label className="block text-sm font-medium">
-                          Código ou nome do recurso
-
-                          <input
-                            type="text"
-                            value={filtroRecurso}
-                            onChange={(evento) =>
-                              setFiltroRecurso(evento.target.value)
-                            }
-                            placeholder="Código ou nome"
-                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Data inicial
-
-                          <input
-                            type="date"
-                            value={filtroDataInicio}
-                            onChange={(evento) =>
-                              setFiltroDataInicio(evento.target.value)
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Data final
-
-                          <input
-                            type="date"
-                            value={filtroDataFim}
-                            onChange={(evento) =>
-                              setFiltroDataFim(evento.target.value)
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Horário
-
-                          <input
-                            type="time"
-                            value={filtroHora}
-                            onChange={(evento) =>
-                              setFiltroHora(evento.target.value)
-                            }
-                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Usuário
-
-                          <input
-                            type="text"
-                            value={filtroUsuario}
-                            onChange={(evento) =>
-                              setFiltroUsuario(evento.target.value)
-                            }
-                            placeholder="Nome do usuário"
-                            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 font-normal outline-none focus:border-black"
-                          />
-                        </label>
-
-                        <label className="block text-sm font-medium">
-                          Status
+                          Laboratório
 
                           <select
-                            value={filtroStatus}
+                            required
+                            value={formulario.id_laboratorio || ""}
                             onChange={(evento) =>
-                              setFiltroStatus(evento.target.value)
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_laboratorio: evento.target.value,
+                                id_sala: "",
+                              }))
                             }
                             className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
                           >
-                            <option value="">Todos os status</option>
+                            <option value="">
+                              Selecione um laboratório
+                            </option>
 
-                            {dados.status.map((status) => (
+                            {dados.laboratorios.map((lab) => (
                               <option
-                                key={status.id_status}
-                                value={status.id_status}
+                                key={lab.id_laboratorio}
+                                value={lab.id_laboratorio}
                               >
-                                {status.nome}
+                                {lab.nome} (ID {lab.id_laboratorio})
                               </option>
                             ))}
                           </select>
                         </label>
-                      </div>
+                      ) : (
+                        <label className="block text-sm font-medium">
+                          Sala de aula
 
-                      <div className="mt-6 flex flex-wrap gap-3">
-                        <button
-                          type="submit"
-                          className="flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
-                        >
-                          <Search size={17} />
-                          Pesquisar
-                        </button>
+                          <select
+                            required
+                            value={formulario.id_sala || ""}
+                            onChange={(evento) =>
+                              setFormulario((anterior) => ({
+                                ...anterior,
+                                id_sala: evento.target.value,
+                                id_laboratorio: "",
+                              }))
+                            }
+                            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                          >
+                            <option value="">
+                              Selecione uma sala
+                            </option>
 
-                        <button
-                          type="button"
-                          onClick={limparFiltros}
-                          className="rounded-xl border border-gray-200 px-5 py-3 text-sm font-semibold hover:bg-gray-50"
-                        >
-                          Limpar filtros
-                        </button>
-                      </div>
-                    </form>
-                  </section>
-                </>
+                            {dados.salas.map((sala) => (
+                              <option
+                                key={sala.id_sala}
+                                value={sala.id_sala}
+                              >
+                                {sala.nome} (ID {sala.id_sala})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+
+                      <label className="block text-sm font-medium">
+                        Data de início
+
+                        <input
+                          required
+                          type="date"
+                          value={formulario.data_inicio || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              data_inicio: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Data de término
+
+                        <input
+                          required
+                          type="date"
+                          value={formulario.data_fim || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              data_fim: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Hora de início
+
+                        <input
+                          required
+                          type="time"
+                          value={formulario.hora_inicio || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              hora_inicio: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+
+                      <label className="block text-sm font-medium">
+                        Hora de término
+
+                        <input
+                          required
+                          type="time"
+                          value={formulario.hora_fim || ""}
+                          onChange={(evento) =>
+                            setFormulario((anterior) => ({
+                              ...anterior,
+                              hora_fim: evento.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-normal outline-none focus:border-black"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="mt-6 flex items-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                    >
+                      <Plus size={17} />
+                      Cadastrar reserva
+                    </button>
+                  </form>
+                </section>
               )}
 
-              {/* Lista */}
+              {/* LISTAGEM DOS REGISTROS */}
               <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1054,15 +1070,17 @@ export default function Home() {
 
                     <input
                       value={busca}
-                      onChange={(evento) => setBusca(evento.target.value)}
-                      placeholder="Pesquisar na lista..."
+                      onChange={(evento) =>
+                        setBusca(evento.target.value)
+                      }
+                      placeholder="Pesquisar..."
                       className="w-full rounded-xl border border-gray-200 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-black sm:w-64"
                     />
                   </div>
                 </div>
 
                 {mensagem && (
-                  <p className="border-b border-gray-100 px-5 py-3 text-sm text-gray-700">
+                  <p className="border-b border-gray-100 px-5 py-3 text-sm">
                     {mensagem}
                   </p>
                 )}
@@ -1116,7 +1134,15 @@ export default function Home() {
                                   key={coluna}
                                   className="whitespace-nowrap px-5 py-4"
                                 >
-                                  {valor == null ? "—" : String(valor)}
+                                  {valor == null
+                                    ? "—"
+                                    : [
+                                        "data_inicio",
+                                        "data_fim",
+                                        "data_nascimento",
+                                      ].includes(coluna)
+                                      ? formatarData(valor)
+                                      : String(valor)}
                                 </td>
                               ))}
 
@@ -1145,6 +1171,12 @@ export default function Home() {
                 )}
               </section>
             </>
+          )}
+
+          {mensagem && secao === "inicio" && (
+            <p className="text-sm text-gray-600">
+              {mensagem}
+            </p>
           )}
         </div>
       </main>

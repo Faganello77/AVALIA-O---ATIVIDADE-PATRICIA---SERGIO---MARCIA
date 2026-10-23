@@ -16,6 +16,7 @@ import laboratoriosRouter from './routes/laboratorios.js';
 import salasRouter from './routes/salas.js';
 import statusRouter from './routes/status.js';
 import reservasRouter from './routes/reservas.js';
+import authRouter from './routes/auth.js';
 
 const app = express();
 const porta = Number(process.env.PORTA || 3000);
@@ -60,17 +61,22 @@ const { csrfSynchronisedProtection, generateToken } = csrfSync({
     req.body?._csrf || req.headers['x-csrf-token']
 });
 
+// Aplica o limite geral de requisições
+app.use(limiteRequisicoes);
+
+// Entrega o token CSRF
 app.get('/csrf-token', (req, res) => {
   res.json({ csrfToken: generateToken(req) });
 });
 
+// Valida tokens nas requisições que alteram dados
 app.use(csrfSynchronisedProtection);
-app.use(limiteRequisicoes);
 
 app.get('/', (req, res) => {
   res.json({ mensagem: 'API do Sistema de Reservas funcionando!' });
 });
 
+app.use('/auth', authRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/laboratorios', laboratoriosRouter);
 app.use('/salas', salasRouter);
