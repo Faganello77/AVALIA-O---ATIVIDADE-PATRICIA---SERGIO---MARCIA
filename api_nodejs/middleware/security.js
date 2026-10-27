@@ -1,12 +1,29 @@
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 
+// protege os cabeçalhos.
 export const protecaoCabecalhos = helmet();
 
+// limite geral da API.
+// aumentado para evitar bloquear o uso normal do painel.
 export const limiteRequisicoes = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 100,
-  standardHeaders: 'draft-7',
+  limit: 300,
+  standardHeaders: "draft-7",
   legacyHeaders: false,
-  message: 'Muitas requisições. Tente novamente mais tarde.'
+  message: {
+    mensagem: "Muitas requisições. Aguarde um pouco e tente novamente.",
+  },
+});
+
+// limite específico para tentativas de login.
+export const limiteLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    mensagem:
+      "Muitas tentativas de login. Aguarde alguns minutos e tente novamente.",
+  },
 });

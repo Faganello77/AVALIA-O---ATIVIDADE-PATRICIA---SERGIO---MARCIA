@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Users,
   FlaskConical,
@@ -83,6 +84,8 @@ const nomes = {
 };
 
 export default function Home() {
+  const router = useRouter();
+
   const [secao, setSecao] = useState("inicio");
 
   const [dados, setDados] = useState({
@@ -99,10 +102,10 @@ export default function Home() {
   const [carregando, setCarregando] = useState(false);
   const [saindo, setSaindo] = useState(false);
   const [usuarioLogado, setUsuarioLogado] = useState(null);
+  const [verificandoSessao, setVerificandoSessao] = useState(true);
   const [menuAberto, setMenuAberto] = useState(false);
   const [tipoRecurso, setTipoRecurso] = useState("laboratorio");
 
-  // Evita repetir uma mesma requisição enquanto ela está em andamento.
   const requisicoesAtivas = useRef(new Map());
 
   // Nome da conta conectada.
@@ -119,7 +122,6 @@ export default function Home() {
   async function carregarDados(tipo, opcoes = {}) {
     if (!endpoints[tipo]) return "erro";
 
-    // Reutiliza uma chamada que já estiver em andamento.
     if (requisicoesAtivas.current.has(tipo)) {
       return requisicoesAtivas.current.get(tipo);
     }
@@ -138,10 +140,14 @@ export default function Home() {
           cache: "no-store",
         });
 
-        // A resposta pode ser JSON ou texto simples.
         const resultado = await lerResposta(resposta);
 
         if (!resposta.ok) {
+          if (resposta.status === 401 || resposta.status === 403) {
+            router.replace("/login");
+            return "erro";
+          }
+
           if (resposta.status === 429) {
             setMensagem(
               "A API recebeu muitas requisições. Aguarde um pouco antes de tentar novamente."
@@ -189,11 +195,82 @@ export default function Home() {
     return requisicao;
   }
 
-  // Na Visão Geral, carrega um endpoint por vez.
+  // Confirma a sessão antes de liberar o painel.
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregarUsuarioLogado() {
+      try {
+        const resposta = await fetch(`${API}/auth/sessao`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const resultado = await lerResposta(resposta);
+
+        const conta =
+          resultado?.usuario ??
+          resultado?.user ??
+          resultado?.conta ??
+          resultado?.sessao?.user ??
+          resultado?.dados?.usuario ??
+          resultado?.data?.usuario ??
+          resultado?.data?.user ??
+          (resultado &&
+          typeof resultado === "object" &&
+          [
+            "id_usuario",
+            "id",
+            "login",
+            "nome",
+            "email",
+            "username",
+            "name",
+          ].some((campo) => resultado[campo] != null)
+            ? resultado
+            : null);
+
+        if (!resposta.ok || !conta || typeof conta !== "object") {
+          if (ativo) {
+            setUsuarioLogado(null);
+            router.replace("/login");
+          }
+
+          return;
+        }
+
+        if (ativo) {
+          setUsuarioLogado(conta);
+        }
+      } catch (erro) {
+        console.error("Não foi possível verificar a sessão:", erro);
+
+        if (ativo) {
+          setUsuarioLogado(null);
+          router.replace("/login");
+        }
+      } finally {
+        if (ativo) {
+          setVerificandoSessao(false);
+        }
+      }
+    }
+
+    carregarUsuarioLogado();
+
+    return () => {
+      ativo = false;
+    };
+  }, [router]);
+
+  // Carrega os registros somente depois de confirmar o login.
   useEffect(() => {
     let ativo = true;
 
     async function carregarSecao() {
+      if (verificandoSessao || !usuarioLogado) return;
+
       setMensagem("");
 
       const tipos =
@@ -216,8 +293,11 @@ export default function Home() {
           limparMensagem: false,
         });
 
-        // Ao receber HTTP 429, interrompe as chamadas seguintes.
         if (resultado === "limite") {
+          return;
+        }
+
+        if (resultado === "erro") {
           return;
         }
       }
@@ -228,49 +308,7 @@ export default function Home() {
     return () => {
       ativo = false;
     };
-  }, [secao]);
-
-  // Busca a conta autenticada pela sessão do backend.
-  useEffect(() => {
-    let ativo = true;
-
-    async function carregarUsuarioLogado() {
-      try {
-        const resposta = await fetch(`${API}/auth/sessao`, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
-
-        const resultado = await lerResposta(resposta);
-
-        if (!resposta.ok) return;
-
-        const conta =
-          resultado.usuario ??
-          resultado.user ??
-          resultado.conta ??
-          resultado.sessao?.user ??
-          resultado.dados?.usuario ??
-          resultado;
-
-        if (ativo && conta && typeof conta === "object") {
-          setUsuarioLogado(conta);
-        }
-      } catch (erro) {
-        console.error(
-          "Não foi possível carregar a conta:",
-          erro
-        );
-      }
-    }
-
-    carregarUsuarioLogado();
-
-    return () => {
-      ativo = false;
-    };
-  }, []);
+  }, [secao, verificandoSessao, usuarioLogado]);
 
   // Encerra a sessão e retorna ao login.
   async function sair() {
@@ -312,6 +350,7 @@ export default function Home() {
         );
       }
 
+      setUsuarioLogado(null);
       window.location.replace("/login");
     } catch (erro) {
       console.error("Erro ao sair:", erro);
@@ -357,6 +396,11 @@ export default function Home() {
       });
 
       const resultado = await lerResposta(resposta);
+
+      if (resposta.status === 401 || resposta.status === 403) {
+        router.replace("/login");
+        return;
+      }
 
       if (!resposta.ok) {
         throw new Error(
@@ -431,6 +475,11 @@ export default function Home() {
       );
 
       const resultado = await lerResposta(resposta);
+
+      if (resposta.status === 401 || resposta.status === 403) {
+        router.replace("/login");
+        return;
+      }
 
       if (!resposta.ok) {
         throw new Error(
@@ -522,6 +571,20 @@ export default function Home() {
     if (tipo === "laboratorios") return item.id_laboratorio;
     if (tipo === "reservas") return item.id_reserva;
 
+    return null;
+  }
+
+  // Não mostra a Visão Geral antes de validar a sessão.
+  if (verificandoSessao) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600">
+        Verificando sessão...
+      </main>
+    );
+  }
+
+  // Não mostra o painel se não houver uma conta autenticada.
+  if (!usuarioLogado) {
     return null;
   }
 

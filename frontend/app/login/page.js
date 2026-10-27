@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DoorOpen,
@@ -36,6 +36,62 @@ export default function Login() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
+  const [verificandoSessao, setVerificandoSessao] = useState(true);
+
+  // Se já estiver autenticado, vai para a Visão Geral.
+  useEffect(() => {
+    let ativo = true;
+
+    async function verificarSessao() {
+      try {
+        const resposta = await fetch(`${API}/auth/sessao`, {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const resultado = await lerResposta(resposta);
+
+        const conta =
+          resultado?.usuario ??
+          resultado?.user ??
+          resultado?.conta ??
+          resultado?.sessao?.user ??
+          resultado?.dados?.usuario ??
+          resultado?.data?.usuario ??
+          resultado?.data?.user ??
+          (resultado &&
+          typeof resultado === "object" &&
+          [
+            "id_usuario",
+            "id",
+            "login",
+            "nome",
+            "email",
+            "username",
+            "name",
+          ].some((campo) => resultado[campo] != null)
+            ? resultado
+            : null);
+
+        if (ativo && resposta.ok && conta) {
+          router.replace("/");
+        }
+      } catch (erro) {
+        console.error("Erro ao verificar sessão:", erro);
+      } finally {
+        if (ativo) {
+          setVerificandoSessao(false);
+        }
+      }
+    }
+
+    verificarSessao();
+
+    return () => {
+      ativo = false;
+    };
+  }, [router]);
 
   async function entrar(evento) {
     evento.preventDefault();
@@ -56,9 +112,7 @@ export default function Login() {
     setCarregando(true);
 
     try {
-      /*
-       * Primeiro, solicita o token CSRF à API.
-       */
+      // Solicita o token CSRF à API.
       const respostaToken = await fetch(`${API}/csrf-token`, {
         method: "GET",
         credentials: "include",
@@ -77,10 +131,7 @@ export default function Login() {
         );
       }
 
-      /*
-       * Envia as credenciais para a API.
-       * A senha não é armazenada no localStorage ou sessionStorage.
-       */
+      // Envia login e senha para o backend.
       const resposta = await fetch(`${API}/auth/login`, {
         method: "POST",
         credentials: "include",
@@ -91,7 +142,7 @@ export default function Login() {
         },
         body: JSON.stringify({
           login: loginLimpo,
-          senha: senha,
+          senha,
         }),
       });
 
@@ -120,19 +171,14 @@ export default function Login() {
         );
       }
 
-      /*
-       * A API deve criar e salvar a sessão no servidor antes
-       * de responder que o login foi realizado.
-       */
+      // A API deve salvar a sessão antes de confirmar o login.
       setSenha("");
       router.replace("/");
       router.refresh();
     } catch (erroLogin) {
       console.error("Erro na autenticação:", erroLogin);
 
-      if (
-        erroLogin instanceof TypeError
-      ) {
+      if (erroLogin instanceof TypeError) {
         setErro(
           "Não foi possível conectar à API. Confira se ela está ligada na porta 3000."
         );
@@ -144,6 +190,18 @@ export default function Login() {
     } finally {
       setCarregando(false);
     }
+  }
+
+  // Evita mostrar o formulário durante a verificação inicial.
+  if (verificandoSessao) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-600">
+        <div className="flex items-center gap-2">
+          <LoaderCircle size={20} className="animate-spin" />
+          Verificando sessão...
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -165,9 +223,7 @@ export default function Login() {
 
         <section className="rounded-2xl border border-gray-200 bg-white p-7 shadow-sm sm:p-8">
           <div className="mb-6">
-            <h2 className="text-xl font-bold">
-              Fazer login
-            </h2>
+            <h2 className="text-xl font-bold">Fazer login</h2>
 
             <p className="mt-1 text-sm text-gray-500">
               Informe seus dados de acesso.
@@ -210,9 +266,7 @@ export default function Login() {
                   required
                   disabled={carregando}
                   value={login}
-                  onChange={(evento) =>
-                    setLogin(evento.target.value)
-                  }
+                  onChange={(evento) => setLogin(evento.target.value)}
                   placeholder="Digite seu login"
                   className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100 disabled:bg-gray-100"
                 />
@@ -242,9 +296,7 @@ export default function Login() {
                   required
                   disabled={carregando}
                   value={senha}
-                  onChange={(evento) =>
-                    setSenha(evento.target.value)
-                  }
+                  onChange={(evento) => setSenha(evento.target.value)}
                   placeholder="Digite sua senha"
                   className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-12 text-sm outline-none transition focus:border-black focus:ring-2 focus:ring-gray-100 disabled:bg-gray-100"
                 />
@@ -256,9 +308,7 @@ export default function Login() {
                   }
                   disabled={carregando}
                   aria-label={
-                    mostrarSenha
-                      ? "Ocultar senha"
-                      : "Mostrar senha"
+                    mostrarSenha ? "Ocultar senha" : "Mostrar senha"
                   }
                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-black disabled:opacity-50"
                 >

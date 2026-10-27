@@ -1,15 +1,19 @@
+import { Router } from "express";
+import { exigirLogin } from "../middleware/auth.js";
 
-import { Router } from 'express';
 import {
   cadastrarUsuario,
   listarUsuarios,
-  excluirUsuario
-} from '../controllers/usuariosController.js';
+  excluirUsuario,
+} from "../controllers/usuariosController.js";
 
 const router = Router();
 
-router.post('/', cadastrarUsuario);
-router.get('/', listarUsuarios);
-router.delete('/:id', excluirUsuario);
+// Todas as operações exigem login.
+router.use(exigirLogin);
+
+router.post("/", cadastrarUsuario);
+router.get("/", listarUsuarios);
+router.delete("/:id", excluirUsuario);
 
 export default router;
