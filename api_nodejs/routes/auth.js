@@ -9,13 +9,13 @@ import {
 
 const router = Router();
 
-// Login com limite específico de tentativas.
+// login com limite específico de tentativas.
 router.post("/login", limiteLogin, login);
 
-// Consulta da sessão atual.
+// consulta da sessão atual.
 router.get("/sessao", verificarSessao);
 
-// Encerra a sessão.
+// encerra a sessão.
 router.post("/logout", logout);
 
 export default router;

@@ -1,6 +1,6 @@
 import { conectarBanco, sql } from "../config/db.js";
 
-// Verifica se a data realmente existe no calendário
+// Verifica se a data realmente existe no calendario
 function dataValida(valor) {
   if (
     typeof valor !== "string" ||
@@ -29,7 +29,7 @@ function dataValida(valor) {
   return dia >= 1 && dia <= diasPorMes[mes - 1];
 }
 
-// Verifica se o horário está no formato HH:mm
+// verifica se o horario ta no formato certo brasileiro
 function horaValida(valor) {
   if (
     typeof valor !== "string" ||
@@ -41,7 +41,7 @@ function horaValida(valor) {
   return true;
 }
 
-// Aceita somente IDs inteiros positivos e seguros
+// aceita somente IDs inteiros positivos e seguros
 function idValido(valor) {
   if (typeof valor === "number") {
     return Number.isSafeInteger(valor) && valor > 0;
@@ -57,7 +57,7 @@ function idValido(valor) {
   return Number.isSafeInteger(Number(valor));
 }
 
-// Consultar reservas com filtros
+// consultar reservas com filtros
 export async function listarReservas(req, res) {
   try {
     const {
@@ -69,7 +69,7 @@ export async function listarReservas(req, res) {
       id_status,
     } = req.query;
 
-    // Valida os filtros recebidos pela API
+    // valida os filtros recebidos pela API
     for (const [valor, limite] of [
       [recurso, 100],
       [usuario, 100],
@@ -278,7 +278,7 @@ export async function listarReservas(req, res) {
   }
 }
 
-// Cadastrar reserva
+// cadastrar reserva
 export async function cadastrarReserva(req, res) {
   try {
     const {
@@ -411,7 +411,7 @@ export async function cadastrarReserva(req, res) {
   }
 }
 
-// Excluir reserva
+// excluir reserva
 export async function excluirReserva(req, res) {
   try {
     const { id } = req.params;

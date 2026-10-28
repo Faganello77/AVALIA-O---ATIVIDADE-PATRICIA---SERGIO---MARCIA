@@ -4,7 +4,7 @@ import { listarStatus } from "../controllers/statusController.js";
 
 const router = Router();
 
-// Consultar os status também exige login.
+// consultar os status tambem exige login.
 router.use(exigirLogin);
 
 router.get("/", listarStatus);

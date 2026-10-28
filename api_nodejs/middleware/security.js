@@ -5,7 +5,6 @@ import rateLimit from "express-rate-limit";
 export const protecaoCabecalhos = helmet();
 
 // limite geral da API.
-// aumentado para evitar bloquear o uso normal do painel.
 export const limiteRequisicoes = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 300,

@@ -10,7 +10,7 @@ import {
 
 const router = express.Router();
 
-// Todas essas operações exigem login
+// todas essas operações exigem login
 router.get("/", exigirLogin, listarReservas);
 router.post("/", exigirLogin, cadastrarReserva);
 router.delete("/:id", exigirLogin, excluirReserva);

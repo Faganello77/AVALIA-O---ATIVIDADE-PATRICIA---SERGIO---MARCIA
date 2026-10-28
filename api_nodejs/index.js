@@ -61,15 +61,15 @@ const { csrfSynchronisedProtection, generateToken } = csrfSync({
     req.body?._csrf || req.headers['x-csrf-token']
 });
 
-// Aplica o limite geral de requisições
+// aplica o limite geral de requisições
 app.use(limiteRequisicoes);
 
-// Entrega o token CSRF
+// entrega o token CSRF
 app.get('/csrf-token', (req, res) => {
   res.json({ csrfToken: generateToken(req) });
 });
 
-// Valida tokens nas requisições que alteram dados
+// valida tokens nas requisições que alteram dados
 app.use(csrfSynchronisedProtection);
 
 app.get('/', (req, res) => {

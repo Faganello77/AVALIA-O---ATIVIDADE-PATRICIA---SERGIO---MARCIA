@@ -9,7 +9,7 @@ import {
 
 const router = Router();
 
-// Todas as operações exigem login.
+// todas as operações exigem login.
 router.use(exigirLogin);
 
 router.post("/", cadastrarUsuario);
